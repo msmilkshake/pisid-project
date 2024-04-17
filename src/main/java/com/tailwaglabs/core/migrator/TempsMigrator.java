@@ -1,8 +1,16 @@
-package com.tailwaglabs.core;
+package com.tailwaglabs.core.migrator;
 
 import com.mongodb.Mongo;
+import com.mongodb.MongoClient;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoCursor;
+import com.mongodb.client.MongoDatabase;
+import com.tailwaglabs.core.ExperimentWatcher;
+import org.bson.Document;
 
 public class TempsMigrator {
+
+    MongoCollection<Document> tempsCollection;
 
     /**
      * Migrates and processes Temps sensor data: Mongo - MySQL
