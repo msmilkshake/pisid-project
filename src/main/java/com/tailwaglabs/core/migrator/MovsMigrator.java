@@ -21,18 +21,34 @@ public class MovsMigrator {
     private MongoCursor<Document> cursor;
 
     Document movsQuery = Document.parse("{q: [" +
-            "{ $match: { Timestamp: { $gte: " + currentTimestamp + " } } }," +
-            "{ $project: {_id: 1, Timestamp: 1, SalaDestino: 1, SalaOrigem: 1, Hora: 1 } }" +
+            "{ $match: {  $and: [ { Timestamp: { $gte: " + currentTimestamp + " } }, {Migrated: {$ne \"1\" }} ] } }," +
+            "{ $project: {_id: 1, Hora: 1, SalaDestino: 1, SalaOrigem: 1, Hora: 1 } }" +
             "]}"
     );
 
     private void init() {
         movsCollection = ConnectionFactory.getNewConnection(host, port, database, collection);
         currentTimestamp = System.currentTimeMillis();
+        cursor = movsCollection.find(movsQuery).iterator();
     }
 
     private void loop() {
         init();
+        while(cursor.hasNext()) {
+            Document mongoRecord = cursor.next();
+        }
+    }
+
+    public void checkWrongTimestamp(Document doc) {
+        // TODO
+    }
+
+    public void checkWrongFormat() {
+        // TODO
+    }
+
+    public void insertRecordMysql(Document doc) {
+        // TODO
     }
 
 
