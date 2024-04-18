@@ -1,8 +1,10 @@
 package com.tailwaglabs.core.migrator;
 
 import com.mongodb.Mongo;
+import com.mongodb.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
+import com.mongodb.client.MongoDatabase;
 import org.bson.Document;
 
 /**
@@ -11,6 +13,8 @@ import org.bson.Document;
  */
 public class MovsMigrator {
 
+    private MongoClient mongoClient;
+    private MongoDatabase db;
     private String host = "localhost";
     private int port = 27019;
     private String database = "mqqt";
@@ -27,7 +31,9 @@ public class MovsMigrator {
     );
 
     private void init() {
-        movsCollection = ConnectionFactory.getNewConnection(host, port, database, collection);
+        mongoClient = new MongoClient(host, port);
+        db = mongoClient.getDatabase(database);
+        movsCollection = db.getCollection(collection);
         currentTimestamp = System.currentTimeMillis();
         cursor = movsCollection.find(movsQuery).iterator();
     }

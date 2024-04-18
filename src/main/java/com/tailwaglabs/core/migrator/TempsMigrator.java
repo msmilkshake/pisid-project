@@ -17,6 +17,8 @@ import org.bson.Document;
  */
 public class TempsMigrator {
 
+    private MongoClient mongoClient;
+    private MongoDatabase db;
     private String host = "localhost";
     private int port = 27019;
     private String database = "mqqt";
@@ -34,7 +36,9 @@ public class TempsMigrator {
     );
 
     private void init() {
-        tempsCollection = ConnectionFactory.getNewConnection(host, port, database, collection);
+        mongoClient = new MongoClient(host, port);
+        db = mongoClient.getDatabase(database);
+        tempsCollection = db.getCollection(collection);
         currentTimestamp = System.currentTimeMillis();
         cursor = tempsCollection.find(movsQuery).iterator();
     }
