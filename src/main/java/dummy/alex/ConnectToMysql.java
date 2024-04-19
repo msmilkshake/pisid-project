@@ -14,23 +14,23 @@ public class ConnectToMysql {
         }
     }
 
-    private static int get_number_of_rooms(Connection connection) throws SQLException { // Query DB to find number of rooms / temperature
+    private static int get_number_of_rooms(Connection connection) throws SQLException {
         Statement statement = connection.createStatement();
-        ResultSet resultSet = statement.executeQuery("SELECT * FROM configuracaolabirinto");
+        ResultSet resultSet = statement.executeQuery("SELECT numerodesalas FROM configuracaolabirinto");
         resultSet.next();
-//        double temperature = resultSet.getDouble("temperaturaprogramada");  // verificar se será necessário
-        return resultSet.getInt("numerodesalas") + 1;
+        int nbRooms = resultSet.getInt("numerodesalas") + 1;
+        resultSet.close();
+        return nbRooms;
     }
 
     private static void load_topology(Connection connection, int[][] topology) throws SQLException {
         Statement statement = connection.createStatement();
-        ResultSet resultSet = statement.executeQuery("SELECT * FROM corredor");
+        ResultSet resultSet = statement.executeQuery("SELECT salaa, salab FROM corredor");
         while (resultSet.next()) {
-            int A = resultSet.getInt("salaa");
-            int B = resultSet.getInt("salab");
-//            int cent = resultSet.getInt("centimetro");  // verificar se será necessário
-//            System.out.println("Sala " + A + " -> " + B + " - Dist: " + cent + " cm"); // visualize data retrieved
-            topology[A][B] = 1;  // load adjacency matrix
+            int a = resultSet.getInt("salaa");
+            int b = resultSet.getInt("salab");
+//            System.out.println(STR."Sala \{a} -> \{b}"); // visualize data retrieved REMOVE
+            topology[a][b] = 1;  // load adjacency matrix
         }
         resultSet.close();
     }
