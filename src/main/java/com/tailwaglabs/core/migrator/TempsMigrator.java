@@ -23,7 +23,6 @@ public class TempsMigrator {
     private int port = 27019;
     private String database = "mqqt";
     private String collection = "temps";
-
     private MongoCollection<Document> tempsCollection;
     private long currentTimestamp;
     private MongoCursor<Document> cursor;
@@ -41,6 +40,11 @@ public class TempsMigrator {
         tempsCollection = db.getCollection(collection);
         currentTimestamp = System.currentTimeMillis();
         cursor = tempsCollection.find(movsQuery).iterator();
+    }
+
+    private void closeConnection() {
+        cursor.close();
+        mongoClient.close();
     }
 
     public void checkWrongTimestamp(Document doc) {

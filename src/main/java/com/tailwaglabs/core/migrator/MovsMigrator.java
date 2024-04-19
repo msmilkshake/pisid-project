@@ -19,7 +19,6 @@ public class MovsMigrator {
     private int port = 27019;
     private String database = "mqqt";
     private String collection = "movs";
-
     private MongoCollection<Document> movsCollection;
     private long currentTimestamp;
     private MongoCursor<Document> cursor;
@@ -38,11 +37,17 @@ public class MovsMigrator {
         cursor = movsCollection.find(movsQuery).iterator();
     }
 
+    private void closeConnection() {
+        cursor.close();
+        mongoClient.close();
+    }
+
     private void loop() {
         init();
         while(cursor.hasNext()) {
             Document mongoRecord = cursor.next();
         }
+        closeConnection();
     }
 
     public void checkWrongTimestamp(Document doc) {
