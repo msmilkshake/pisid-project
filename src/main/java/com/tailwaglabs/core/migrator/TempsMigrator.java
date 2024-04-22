@@ -51,15 +51,21 @@ public class TempsMigrator {
             """;
 
     private final String QUERY_SQL_INSERT_TEMP = """
-            INSERT INTO medicoestemperatura(IDExperiencia, Leitura, Sensor, Hora, TimestampRegisto)
-            VALUES (?, ?, ?, ?, FROM_UNIXTIME(? / 1000))
+            INSERT INTO medicoestemperatura(IDExperiencia, Leitura, Sensor, Hora, TimestampRegisto, isError)
+            VALUES (?, ?, ?, ?, ?, ?)
             """;
+    // TODO Investigar pq é preciso dividir por 1000
 
 
     private boolean isExperimentRunning = false;
     private final Lock EXPERIMENT_LOCK = new ReentrantLock();
 
     private final int TEMPS_FREQUENCY = 3 * 1000; // 3 seconds
+
+    private void run() {
+        init();
+        migrationLoop();
+    }
 
     private void init() {
         try {
@@ -90,13 +96,13 @@ public class TempsMigrator {
     private void migrationLoop() {
         while (true) {
             Document tempsQuery = Document.parse(String.format(QUERY_MONGO_GET_TEMPS, currentTimestamp));
-            cursor = tempsCollection.aggregate((List<? extends Bson>) tempsQuery.get("q")).iterator();
+            cursor = tempsCollection.find(tempsQuery).iterator();
 
             Document doc = null;
             while (cursor.hasNext()) {
                 doc = cursor.next();
                 System.out.println(doc);
-                persistTemp(doc, System.currentTimeMillis(), 1);
+                persistTemp(doc);
             }
             if (doc != null) {
                 currentTimestamp = System.currentTimeMillis();
@@ -112,28 +118,60 @@ public class TempsMigrator {
         }
     }
 
-    public void persistTemp(Document doc, long timestamp, long experiencia) {
-        boolean validReading = validateReading(doc);
-        double reading = doc.getDouble("Leitura");
-        int sensor = doc.getInteger("Sensor");
-        int recordedTimestamp = doc.getInteger("Timestamp");
+    public void persistTemp(Document doc) {
+        Boolean validReading = validateReading(doc);
+        Double reading = doc.getDouble("Leitura");
+        Integer sensor = doc.getInteger("Sensor");
+        Long recordedTimestamp = doc.getLong("Timestamp");
         String readingTimeStr = doc.getString("Hora").replace(" ", "T");
         LocalDateTime readingTime = readingTimeStr != null ?
                 LocalDateTime.parse(readingTimeStr) :
                 null;
 
+        Long experimentId = 1L;
 
         try {
-            PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP);
-            statement.b
-            String sqlQuery = String.format(QUERY_SQL_INSERT_TEMP,
-                    experiencia, reading, timestamp, readingTime, timestamp
-            );
-            Statement s = mariadbConnection.createStatement();
-            int result = s.executeUpdate(sqlQuery);
-            s.close();
+            PreparedStatement statement =
+                    mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP, PreparedStatement.RETURN_GENERATED_KEYS);
+            if (experimentId == null) {
+                statement.setNull(1, Types.INTEGER);
+            } else {
+                statement.setLong(1, experimentId);
+            }
+            if (reading == null) {
+                statement.setNull(2, Types.DECIMAL);
+            } else {
+                statement.setDouble(2, reading);
+            }
+            if (sensor == null) {
+                statement.setNull(3, Types.INTEGER);
+            } else {
+                statement.setInt(3, sensor);
+            }
+            if (readingTime == null) {
+                statement.setNull(4, Types.TIMESTAMP);
+            } else {
+                statement.setTimestamp(4, Timestamp.valueOf(readingTime));
+            }
+            if (recordedTimestamp == null) {
+                statement.setNull(5, Types.BIGINT);
+            } else {
+                statement.setLong(5, recordedTimestamp);
+            }
+            statement.setInt(6, validReading ? 0 : 1);
+
+            statement.executeUpdate();
+            ResultSet generatedKeys = statement.getGeneratedKeys();
+
+            if (generatedKeys.next()) {
+                long newId = generatedKeys.getLong(1);
+                System.out.println("Generated ID: " + newId);
+            } else {
+                throw new SQLException("Creating record failed, no ID obtained.");
+            }
+            statement.close();
         } catch (Exception e) {
-            System.out.println("Error Inserting in the database . " + e);
+            System.out.println("Error Inserting in the database. " + e);
         }
     }
 
@@ -216,6 +254,8 @@ public class TempsMigrator {
 
         // Immediately launches the Thread: Thread_Experiment_Watcher 
         new ExperimentWatcher().start();
+        new TempsMigrator().run();
 
     }
+
 }

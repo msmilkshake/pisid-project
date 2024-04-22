@@ -52,8 +52,6 @@ public class MqttMessageService {
             System.out.println("Error reading CloudToMongo.ini file " + e);
             JOptionPane.showMessageDialog(null, "The CloudToMongo.inifile wasn't found.", "CloudToMongo", JOptionPane.ERROR_MESSAGE);
         }
-        new CloudToMongo().connecCloud();
-        new CloudToMongo().connectMongo();
     }
 
     private void connectCloud() {
@@ -63,7 +61,7 @@ public class MqttMessageService {
             mqttclient = new MqttClient(cloud_server, "CloudToMongo_"+String.valueOf(i)+"_"+"g14");
             mqttclient.connect();
             System.out.println("Connected with success:" + mqttclient.isConnected());
-            mqttclient.setCallback(this);
+//            mqttclient.setCallback(this);
             mqttclient.subscribe(cloud_temp_topic);
             mqttclient.subscribe(cloud_mov_topic);
         } catch (MqttException e) {
