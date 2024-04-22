@@ -1,22 +1,7 @@
-$job1 = Start-Job -ScriptBlock { mongod.exe --config "C:\sensor-replica-set\server1\server1.conf" }
+$job1 = Start-Job -ScriptBlock { mongod.exe --auth --keyFile "c:\sensor-replica-set\mongodb-keyfile" --config "C:\sensor-replica-set\server1\server1.conf" }
 Start-Sleep -Seconds 3
-Receive-Job -Job $job1
-
-Start-Sleep -Seconds 1
-
-$initiateOutput = & mongosh --port 27019 --eval "rs.initiate(); exit;" 2>&1
-$initialized = ($initiateOutput -match ".*already initialized.*" -join " ").ToString() -notlike "*already initialized*"
-
-if ($initialized) {
-    Write-Host "Replica set is not initialized. Configuring..."
-    & mongosh --port 27019 --eval "rs.add('localhost:25019'); exit;" --quiet
-    & mongosh --port 27019 --eval "rs.add('localhost:23019'); exit;" --quiet
-} else {
-    Write-Host "Replica set is already configured."
-}
-
-$job2 = Start-Job -ScriptBlock { mongod.exe --config "C:\sensor-replica-set\server2\server2.conf" }
-$job3 = Start-Job -ScriptBlock { mongod.exe --config "C:\sensor-replica-set\server3\server3.conf" }
+$job2 = Start-Job -ScriptBlock { mongod.exe --auth --keyFile "c:\sensor-replica-set\mongodb-keyfile" --config "C:\sensor-replica-set\server2\server2.conf" }
+$job3 = Start-Job -ScriptBlock { mongod.exe --auth --keyFile "c:\sensor-replica-set\mongodb-keyfile" --config "C:\sensor-replica-set\server3\server3.conf" }
 
 Start-Sleep -Seconds 3
 
