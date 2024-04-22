@@ -4,6 +4,7 @@ import com.mongodb.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
+import com.tailwaglabs.core.AlertType;
 import com.tailwaglabs.core.ExperimentWatcher;
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -43,7 +44,6 @@ public class TempsMigrator {
     private long currentTimestamp;
     private MongoCursor<Document> cursor;
     private Connection mariadbConnection;
-    private boolean experimentRunning;
     private boolean isBatchMigrated = true;
 
     private final String QUERY_MONGO_GET_TEMPS = """
@@ -56,11 +56,25 @@ public class TempsMigrator {
             """;
     // TODO Investigar pq é preciso dividir por 1000
 
+    private final String QUERY_SQL_GET_TEMP_MIN_MAX = """ 
+            SELECT parametrosexperiencia.TemperaturaMaxima, parametrosexperiencia.TemperaturaMinima
+            FROM experiencia
+            JOIN parametrosexperiencia ON experiencia.IDParametros = parametrosexperiencia.IDParametros
+            WHERE experiencia.IDExperiencia = ?;
+            """;
+
+    private final String QUERY_SQL_INSERT_TEMP_ALERT = """ 
+            INSERT INTO alerta(IDExperiencia, Hora, Sensor, Leitura, TipoAlerta, Mensagem)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """;
+
 
     private boolean isExperimentRunning = false;
     private final Lock EXPERIMENT_LOCK = new ReentrantLock();
-
     private final int TEMPS_FREQUENCY = 3 * 1000; // 3 seconds
+
+    private static ExperimentWatcher watcher;
+
 
     private void run() {
         init();
@@ -103,6 +117,13 @@ public class TempsMigrator {
                 doc = cursor.next();
                 System.out.println(doc);
                 persistTemp(doc);
+                // Teste das duas funções, OK para prints, falta insert do alert no Mysql
+                try {
+                    checkLimitProximity(doc);
+                    limitReached(doc);
+                } catch (SQLException e) {
+                    System.out.println("Error connecting to MariaDB." + e);
+                }
             }
             if (doc != null) {
                 currentTimestamp = System.currentTimeMillis();
@@ -199,41 +220,89 @@ public class TempsMigrator {
         // TODO
     }
 
-    public void checkLimitProximity(Document doc) {
-        double actualTemp = (double) doc.get("Leitura");
+    public void checkLimitProximity(Document doc) throws SQLException {
 
-        //Tem de se ir buscar à experiencia
-        double tempMin = 0;
+        if(!isExperimentRunning) {
+            return;
+        }
+
+        double actualTemp = doc.getDouble("Leitura");
+
+        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_TEMP_MIN_MAX);
+        statement.setInt(1, watcher.getIdExperiment());
+        ResultSet resultSet = statement.executeQuery();
+
+        double tempMin =  0;
         double tempMax = 0;
+
+        if(resultSet.next()) {
+            tempMin =  resultSet.getDouble("TemperaturaMinima");
+            tempMax = resultSet.getDouble("TemperaturaMaxima");
+        }
 
         double range = tempMax - tempMin;
 
         double minLimit = tempMin + 0.1 * range;
         double maxLimit = tempMin + 0.9 * range;
 
-        if (actualTemp <= minLimit) {
-            // Lançar ALERTA??? ou função WriteMySQL???
+        // TODO aplicar mesma logica que a função seguinte ALERTAS
+
+        if (actualTemp <= minLimit && actualTemp >= tempMin) {
+            statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+            statement.setString(1, "Inferior");
+            statement.executeUpdate();
             System.out.println("Temperatura próxima do limite inferior");
-        } else if (actualTemp >= maxLimit) {
-            // Lançar ALERTA??? ou função WriteMySQL???
+        } else if (actualTemp >= maxLimit && actualTemp <= tempMax) {
+            statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+            statement.setString(1, "Superior");
+            statement.executeUpdate();
             System.out.println("Temperatura próxima do limite superior");
         }
     }
 
-    public void limitReached(Document doc) {
-        double actualTemp = (double) doc.get("Leitura");
+    public void limitReached(Document doc) throws SQLException {
 
-        //Tem de se ir buscar à experiencia
-        double tempMin = 0;
+        if(!isExperimentRunning) {
+            return;
+        }
+
+        double actualTemp = doc.getDouble("Leitura");
+        int sensor = doc.getInteger("Sensor");
+
+        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_TEMP_MIN_MAX);
+        statement.setInt(1, watcher.getIdExperiment());
+        ResultSet resultSet = statement.executeQuery();
+
+        double tempMin =  0;
         double tempMax = 0;
 
+        if(resultSet.next()) {
+            tempMin =  resultSet.getDouble("TemperaturaMinima");
+            tempMax = resultSet.getDouble("TemperaturaMaxima");
+
+        }
+
+        String message = "Temperatura atingiu o limite %s definido no sensor %d.";
+
+        statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+        statement.setInt(1,watcher.getIdExperiment());
+        statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+        statement.setInt(3, sensor);
+        statement.setDouble(4, actualTemp);
+        statement.setInt(5, AlertType.PERIGO.getValue());
+
         if (actualTemp <= tempMin) {
-            // Lançar ALERTA??? ou função WriteMySQL???
+            message = String.format(message, "mínimo", sensor);
+            statement.setString(6, message);
+
             System.out.println("Temperatura atingiu limite inferior");
         } else if (actualTemp >= tempMax) {
-            // Lançar ALERTA??? ou função WriteMySQL???
+            message = String.format(message, "máximo", sensor);
+            statement.setString(6, message);
             System.out.println("Temperatura atingiu limite superior");
         }
+
+        statement.executeUpdate();
 
     }
 
@@ -253,7 +322,8 @@ public class TempsMigrator {
         Thread.currentThread().setName("Main_Temps_Migration");
 
         // Immediately launches the Thread: Thread_Experiment_Watcher 
-        new ExperimentWatcher().start();
+        watcher = new ExperimentWatcher();
+        watcher.start();
         new TempsMigrator().run();
 
     }

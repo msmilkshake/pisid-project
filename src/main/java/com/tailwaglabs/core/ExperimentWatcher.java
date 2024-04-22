@@ -16,6 +16,8 @@ public class ExperimentWatcher extends Thread {
 
     private int experimentDuration = 10 * 60 * 1000;
 
+    private int idExperiment = 1;
+
     /**
      * This thread is responsible for detecting when an experiment starts.
      * It's also responsible to check if an experiment exceeded 10 mins
@@ -28,6 +30,9 @@ public class ExperimentWatcher extends Thread {
         
     }
 
+    public int getIdExperiment() {
+        return idExperiment;
+    }
 
     // Call this when an experiment starts
     private void startTimer() {
