@@ -227,6 +227,7 @@ public class TempsMigrator {
         }
 
         double actualTemp = doc.getDouble("Leitura");
+        int sensor = doc.getInteger("Sensor");
 
         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_TEMP_MIN_MAX);
         statement.setInt(1, watcher.getIdExperiment());
@@ -245,19 +246,27 @@ public class TempsMigrator {
         double minLimit = tempMin + 0.1 * range;
         double maxLimit = tempMin + 0.9 * range;
 
-        // TODO aplicar mesma logica que a função seguinte ALERTAS
+        String message = "Temperatura próxima do limite %s definido no sensor %d.";
+
+        statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+        statement.setInt(1,watcher.getIdExperiment());
+        statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+        statement.setInt(3, sensor);
+        statement.setDouble(4, actualTemp);
+        statement.setInt(5, AlertType.AVISO.getValue());
 
         if (actualTemp <= minLimit && actualTemp >= tempMin) {
-            statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
-            statement.setString(1, "Inferior");
+            message = String.format(message, "inferior", sensor);
+            statement.setString(6, message);
             statement.executeUpdate();
             System.out.println("Temperatura próxima do limite inferior");
         } else if (actualTemp >= maxLimit && actualTemp <= tempMax) {
-            statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
-            statement.setString(1, "Superior");
+            message = String.format(message, "superior", sensor);
+            statement.setString(6, message);
             statement.executeUpdate();
             System.out.println("Temperatura próxima do limite superior");
         }
+        statement.close();
     }
 
     public void limitReached(Document doc) throws SQLException {
@@ -294,15 +303,16 @@ public class TempsMigrator {
         if (actualTemp <= tempMin) {
             message = String.format(message, "mínimo", sensor);
             statement.setString(6, message);
-
+            statement.executeUpdate();
             System.out.println("Temperatura atingiu limite inferior");
         } else if (actualTemp >= tempMax) {
             message = String.format(message, "máximo", sensor);
             statement.setString(6, message);
+            statement.executeUpdate();
             System.out.println("Temperatura atingiu limite superior");
         }
 
-        statement.executeUpdate();
+        statement.close();
 
     }
 
