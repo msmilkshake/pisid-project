@@ -51,8 +51,8 @@ public class TempsMigrator {
             """;
 
     private final String QUERY_SQL_INSERT_TEMP = """
-            INSERT INTO medicoestemperatura(IDExperiencia, Leitura, Sensor, Hora, TimestampRegisto, isError)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO medicoestemperatura(IDExperiencia, Leitura, Sensor, Hora, TimestampRegisto, isError, isOutlier)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """;
     // TODO Investigar pq é preciso dividir por 1000
 
@@ -146,6 +146,7 @@ public class TempsMigrator {
 
         Boolean validReading = validateReading(doc);
 
+        boolean isOutlier = false;
 
         // Faz as validações para saber se lança os alertas
         // mas os registo são inseridos na mesma no Mysql
@@ -153,7 +154,7 @@ public class TempsMigrator {
         try {
             checkLimitProximity(doc);
             limitReached(doc);
-            isOutlier(doc);
+           isOutlier = isOutlier(doc);
         } catch (SQLException e) {
             System.out.println("Error connecting to MariaDB." + e);
         }
@@ -196,7 +197,10 @@ public class TempsMigrator {
             } else {
                 statement.setLong(5, recordedTimestamp);
             }
+
             statement.setInt(6, validReading ? 0 : 1);
+
+            statement.setInt(7, isOutlier ? 0 : 1);
 
             statement.executeUpdate();
             ResultSet generatedKeys = statement.getGeneratedKeys();
@@ -335,16 +339,42 @@ public class TempsMigrator {
         }
     }
 
-    public void isOutlier(Document doc) throws SQLException {
+    public boolean isOutlier(Document doc) throws SQLException {
 
+        // Variable to be returned
+        boolean isOutlier = false;
+
+        // Actual temperature from mongo record
+        double actualTemp = doc.getDouble("Leitura");
+
+        // Variable to store the mean temperature
+        double meanTemp = 0;
+
+        // Number of records to get from the db
+        int numberOfRecords = watcher.getOutlierRecordsNumber();
+
+        // Query the db
         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_LAST_X_RECORDS);
-        statement.setInt(1, watcher.getOutlierRecordsNumber());
+        statement.setInt(1, numberOfRecords);
         ResultSet resultSet = statement.executeQuery();
 
+        // Add all the temperatures
+        while (resultSet.next()) {
+            meanTemp += resultSet.getDouble("Leitura");
+        }
 
-        System.out.println("TEMPERATURAS " + watcher.getExperimentMaxTemp());
-        System.out.println(watcher.getOutlierRecordsNumber());
-        System.out.println(+ watcher.getOutlierTempMaxVar());
+        // Divide by the number of records to get the mean
+        meanTemp = meanTemp / numberOfRecords;
+
+        // If the actual temp is greater than the mean + the value OutlierVariacaoTempMax then is outlier
+        // Or if the actual temp is lower than the mean - the value OutlierVariacaoTempMax then is outlier
+        if(actualTemp > meanTemp + watcher.getExperimentMaxTemp()) {
+            isOutlier = true;
+        } else if (actualTemp < meanTemp - watcher.getExperimentMaxTemp()) {
+            isOutlier = true;
+        }
+
+        return isOutlier;
     }
 
     public static void main(String[] args) {
