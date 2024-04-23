@@ -45,6 +45,7 @@ public class TempsMigrator {
     private MongoCursor<Document> cursor;
     private Connection mariadbConnection;
     private boolean isBatchMigrated = true;
+    private final int MAX_NUMBER_OF_OUTLIERS = 3;
 
     private final String QUERY_MONGO_GET_TEMPS = """
             { Timestamp: { $gte: %d }, Migrated: { $ne: '1' } }
@@ -56,16 +57,6 @@ public class TempsMigrator {
             """;
     // TODO Investigar pq é preciso dividir por 1000
 
-    /*
-    private final String QUERY_SQL_GET_TEMP_MIN_MAX = """
-            SELECT parametrosexperiencia.TemperaturaMaxima, parametrosexperiencia.TemperaturaMinima,
-            parametrosexperiencia.OutlierVariacaoTempMax, parametrosexperiencia.OutlierLeiturasNumero
-            FROM experiencia
-            JOIN parametrosexperiencia ON experiencia.IDParametros = parametrosexperiencia.IDParametros
-            WHERE experiencia.IDExperiencia = ?;
-            """;
-     */
-
     private final String QUERY_SQL_INSERT_TEMP_ALERT = """ 
             INSERT INTO alerta(IDExperiencia, Hora, Sensor, Leitura, TipoAlerta, Mensagem)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -74,10 +65,22 @@ public class TempsMigrator {
     private final String QUERY_SQL_GET_LAST_X_RECORDS = """ 
             SELECT * FROM medicoestemperatura
             WHERE IsOutlier = 0
+                AND Sensor = ?
             ORDER BY Hora DESC
             LIMIT ?;                         
             """;
 
+    private final String QUERY_SQL_COUNT_OUTLIERS_LAST_X_RECORDS = """ 
+            SELECT COUNT(*) AS outliers_count
+            FROM (
+                SELECT IsOutlier
+                FROM medicoestemperatura
+                WHERE Sensor = ?
+                ORDER BY Hora DESC
+                LIMIT ?
+            ) AS ultimos_registros
+            WHERE IsOutlier = 1;                   
+            """;
 
     private boolean isExperimentRunning = true;
     private final Lock EXPERIMENT_LOCK = new ReentrantLock();
@@ -154,7 +157,8 @@ public class TempsMigrator {
         try {
             checkLimitProximity(doc);
             limitReached(doc);
-           isOutlier = isOutlier(doc);
+            isOutlier = isOutlier(doc);
+            sendTooManyOutliersAlert(doc);
         } catch (SQLException e) {
             System.out.println("Error connecting to MariaDB." + e);
         }
@@ -344,37 +348,74 @@ public class TempsMigrator {
         // Variable to be returned
         boolean isOutlier = false;
 
+        // Get the Sensor
+        int sensor = doc.getInteger("Sensor");
+
         // Actual temperature from mongo record
         double actualTemp = doc.getDouble("Leitura");
 
-        // Variable to store the mean temperature
-        double meanTemp = 0;
+        // Variable to store the average temperature
+        double averageTemp = 0;
 
-        // Number of records to get from the db
+        // Number of records to get from the db, value defined in each experiment
         int numberOfRecords = watcher.getOutlierRecordsNumber();
 
-        // Query the db
+        // Query the db to get the last X records that are not outliers
         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_LAST_X_RECORDS);
-        statement.setInt(1, numberOfRecords);
+        statement.setInt(1, sensor);
+        statement.setInt(2, numberOfRecords);
         ResultSet resultSet = statement.executeQuery();
 
-        // Add all the temperatures
+        // Add all the temperatures of the X records
         while (resultSet.next()) {
-            meanTemp += resultSet.getDouble("Leitura");
+            averageTemp += resultSet.getDouble("Leitura");
         }
 
-        // Divide by the number of records to get the mean
-        meanTemp = meanTemp / numberOfRecords;
+        // Divide by the number of records (X)
+        averageTemp = averageTemp / numberOfRecords;
 
-        // If the actual temp is greater than the mean + the value OutlierVariacaoTempMax then is outlier
-        // Or if the actual temp is lower than the mean - the value OutlierVariacaoTempMax then is outlier
-        if(actualTemp > meanTemp + watcher.getExperimentMaxTemp()) {
+        System.out.println("THIS IS THE ACTUAL TEMP " + actualTemp + "THIS IS THE AVERAGE " + averageTemp);
+        // If the actual temp is greater than the average + the value OutlierVariacaoTempMax then is outlier
+        // Or if the actual temp is lower than the average - the value OutlierVariacaoTempMax then is outlier
+        if(actualTemp > averageTemp + watcher.getExperimentMaxTemp()) {
             isOutlier = true;
-        } else if (actualTemp < meanTemp - watcher.getExperimentMaxTemp()) {
+        } else if (actualTemp < averageTemp - watcher.getExperimentMaxTemp()) {
             isOutlier = true;
         }
 
         return isOutlier;
+    }
+
+    public void sendTooManyOutliersAlert(Document doc) throws SQLException {
+
+        int sensor = doc.getInteger("Sensor");
+        double actualTemp = doc.getDouble("Leitura");
+
+        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_COUNT_OUTLIERS_LAST_X_RECORDS);
+        statement.setInt(1, sensor);
+        statement.setInt(2, watcher.getOutlierRecordsNumber());
+        System.out.println("Number of records " + watcher.getOutlierRecordsNumber());
+        ResultSet resultSet = statement.executeQuery();
+        int numberOfOutliers = 0;
+
+        if(resultSet.next()) {
+            numberOfOutliers =  resultSet.getInt( "outliers_count");
+            System.out.println("Count of outliers " + numberOfOutliers);
+        }
+
+        String message = "Sensor de temperatura %d registou demasiados Outliers.";
+
+        if(numberOfOutliers > MAX_NUMBER_OF_OUTLIERS) {
+            statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+            statement.setInt(1,watcher.getIdExperiment());
+            statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+            statement.setInt(3, sensor);
+            statement.setDouble(4, actualTemp);
+            statement.setInt(5, AlertType.INFORMATIVO.getValue());
+            message = String.format(message, sensor);
+            statement.setString(6, message);
+            statement.executeUpdate();
+        }
     }
 
     public static void main(String[] args) {
