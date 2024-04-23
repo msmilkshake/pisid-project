@@ -56,20 +56,30 @@ public class TempsMigrator {
             """;
     // TODO Investigar pq é preciso dividir por 1000
 
-    private final String QUERY_SQL_GET_TEMP_MIN_MAX = """ 
-            SELECT parametrosexperiencia.TemperaturaMaxima, parametrosexperiencia.TemperaturaMinima
+    /*
+    private final String QUERY_SQL_GET_TEMP_MIN_MAX = """
+            SELECT parametrosexperiencia.TemperaturaMaxima, parametrosexperiencia.TemperaturaMinima,
+            parametrosexperiencia.OutlierVariacaoTempMax, parametrosexperiencia.OutlierLeiturasNumero
             FROM experiencia
             JOIN parametrosexperiencia ON experiencia.IDParametros = parametrosexperiencia.IDParametros
             WHERE experiencia.IDExperiencia = ?;
             """;
+     */
 
     private final String QUERY_SQL_INSERT_TEMP_ALERT = """ 
             INSERT INTO alerta(IDExperiencia, Hora, Sensor, Leitura, TipoAlerta, Mensagem)
             VALUES (?, ?, ?, ?, ?, ?)
             """;
 
+    private final String QUERY_SQL_GET_LAST_X_RECORDS = """ 
+            SELECT * FROM medicoestemperatura
+            WHERE IsOutlier = 0
+            ORDER BY Hora DESC
+            LIMIT ?;                         
+            """;
 
-    private boolean isExperimentRunning = false;
+
+    private boolean isExperimentRunning = true;
     private final Lock EXPERIMENT_LOCK = new ReentrantLock();
     private final int TEMPS_FREQUENCY = 3 * 1000; // 3 seconds
 
@@ -117,13 +127,6 @@ public class TempsMigrator {
                 doc = cursor.next();
                 System.out.println(doc);
                 persistTemp(doc);
-                // Teste das duas funções, OK para prints, falta insert do alert no Mysql
-                try {
-                    checkLimitProximity(doc);
-                    limitReached(doc);
-                } catch (SQLException e) {
-                    System.out.println("Error connecting to MariaDB." + e);
-                }
             }
             if (doc != null) {
                 currentTimestamp = System.currentTimeMillis();
@@ -140,7 +143,21 @@ public class TempsMigrator {
     }
 
     public void persistTemp(Document doc) {
+
         Boolean validReading = validateReading(doc);
+
+
+        // Faz as validações para saber se lança os alertas
+        // mas os registo são inseridos na mesma no Mysql
+        // Se falha alguma coisa insere alerta mas não insere o registo??
+        try {
+            checkLimitProximity(doc);
+            limitReached(doc);
+            isOutlier(doc);
+        } catch (SQLException e) {
+            System.out.println("Error connecting to MariaDB." + e);
+        }
+
         Double reading = doc.getDouble("Leitura");
         Integer sensor = doc.getInteger("Sensor");
         Long recordedTimestamp = doc.getLong("Timestamp");
@@ -203,23 +220,6 @@ public class TempsMigrator {
                doc.containsKey("Timestamp");
     }
 
-    private void closeConnection() {
-        cursor.close();
-        mongoClient.close();
-    }
-
-    public void checkWrongTimestamp(Document doc) {
-        // TODO
-    }
-
-    public void checkWrongFormat() {
-        // TODO
-    }
-
-    public void insertRecordMysql(Document doc) {
-        // TODO
-    }
-
     public void checkLimitProximity(Document doc) throws SQLException {
 
         if(!isExperimentRunning) {
@@ -229,17 +229,21 @@ public class TempsMigrator {
         double actualTemp = doc.getDouble("Leitura");
         int sensor = doc.getInteger("Sensor");
 
+        /*
         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_TEMP_MIN_MAX);
         statement.setInt(1, watcher.getIdExperiment());
         ResultSet resultSet = statement.executeQuery();
+         */
 
-        double tempMin =  0;
-        double tempMax = 0;
+        double tempMin = watcher.getExperimentMinTemp();
+        double tempMax = watcher.getExperimentMaxTemp();
 
+        /*
         if(resultSet.next()) {
             tempMin =  resultSet.getDouble("TemperaturaMinima");
             tempMax = resultSet.getDouble("TemperaturaMaxima");
         }
+         */
 
         double range = tempMax - tempMin;
 
@@ -248,7 +252,7 @@ public class TempsMigrator {
 
         String message = "Temperatura próxima do limite %s definido no sensor %d.";
 
-        statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
         statement.setInt(1,watcher.getIdExperiment());
         statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
         statement.setInt(3, sensor);
@@ -278,22 +282,26 @@ public class TempsMigrator {
         double actualTemp = doc.getDouble("Leitura");
         int sensor = doc.getInteger("Sensor");
 
+        /*
         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_TEMP_MIN_MAX);
         statement.setInt(1, watcher.getIdExperiment());
         ResultSet resultSet = statement.executeQuery();
+        */
 
-        double tempMin =  0;
-        double tempMax = 0;
+        double tempMin = watcher.getExperimentMinTemp();
+        double tempMax = watcher.getExperimentMaxTemp();
 
+        /*
         if(resultSet.next()) {
             tempMin =  resultSet.getDouble("TemperaturaMinima");
             tempMax = resultSet.getDouble("TemperaturaMaxima");
-
         }
+
+         */
 
         String message = "Temperatura atingiu o limite %s definido no sensor %d.";
 
-        statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
         statement.setInt(1,watcher.getIdExperiment());
         statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
         statement.setInt(3, sensor);
@@ -327,6 +335,17 @@ public class TempsMigrator {
         }
     }
 
+    public void isOutlier(Document doc) throws SQLException {
+
+        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_LAST_X_RECORDS);
+        statement.setInt(1, watcher.getOutlierRecordsNumber());
+        ResultSet resultSet = statement.executeQuery();
+
+
+        System.out.println("TEMPERATURAS " + watcher.getExperimentMaxTemp());
+        System.out.println(watcher.getOutlierRecordsNumber());
+        System.out.println(+ watcher.getOutlierTempMaxVar());
+    }
 
     public static void main(String[] args) {
         Thread.currentThread().setName("Main_Temps_Migration");
