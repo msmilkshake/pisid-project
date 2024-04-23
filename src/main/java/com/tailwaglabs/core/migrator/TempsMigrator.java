@@ -84,7 +84,7 @@ public class TempsMigrator {
 
     private boolean isExperimentRunning = true;
     private final Lock EXPERIMENT_LOCK = new ReentrantLock();
-    private final int TEMPS_FREQUENCY = 3 * 1000; // 3 seconds
+    private final int TEMPS_FREQUENCY = 10 * 1000; // 3 seconds
 
     private static ExperimentWatcher watcher;
 
@@ -211,7 +211,7 @@ public class TempsMigrator {
 
             if (generatedKeys.next()) {
                 long newId = generatedKeys.getLong(1);
-                System.out.println("Generated ID: " + newId);
+                //System.out.println("Generated ID: " + newId);
             } else {
                 throw new SQLException("Creating record failed, no ID obtained.");
             }
@@ -237,21 +237,8 @@ public class TempsMigrator {
         double actualTemp = doc.getDouble("Leitura");
         int sensor = doc.getInteger("Sensor");
 
-        /*
-        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_TEMP_MIN_MAX);
-        statement.setInt(1, watcher.getIdExperiment());
-        ResultSet resultSet = statement.executeQuery();
-         */
-
         double tempMin = watcher.getExperimentMinTemp();
         double tempMax = watcher.getExperimentMaxTemp();
-
-        /*
-        if(resultSet.next()) {
-            tempMin =  resultSet.getDouble("TemperaturaMinima");
-            tempMax = resultSet.getDouble("TemperaturaMaxima");
-        }
-         */
 
         double range = tempMax - tempMin;
 
@@ -271,12 +258,12 @@ public class TempsMigrator {
             message = String.format(message, "inferior", sensor);
             statement.setString(6, message);
             statement.executeUpdate();
-            System.out.println("Temperatura próxima do limite inferior");
+            //System.out.println("Temperatura próxima do limite inferior");
         } else if (actualTemp >= maxLimit && actualTemp <= tempMax) {
             message = String.format(message, "superior", sensor);
             statement.setString(6, message);
             statement.executeUpdate();
-            System.out.println("Temperatura próxima do limite superior");
+            //System.out.println("Temperatura próxima do limite superior");
         }
         statement.close();
     }
@@ -290,22 +277,8 @@ public class TempsMigrator {
         double actualTemp = doc.getDouble("Leitura");
         int sensor = doc.getInteger("Sensor");
 
-        /*
-        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_TEMP_MIN_MAX);
-        statement.setInt(1, watcher.getIdExperiment());
-        ResultSet resultSet = statement.executeQuery();
-        */
-
         double tempMin = watcher.getExperimentMinTemp();
         double tempMax = watcher.getExperimentMaxTemp();
-
-        /*
-        if(resultSet.next()) {
-            tempMin =  resultSet.getDouble("TemperaturaMinima");
-            tempMax = resultSet.getDouble("TemperaturaMaxima");
-        }
-
-         */
 
         String message = "Temperatura atingiu o limite %s definido no sensor %d.";
 
@@ -320,12 +293,12 @@ public class TempsMigrator {
             message = String.format(message, "mínimo", sensor);
             statement.setString(6, message);
             statement.executeUpdate();
-            System.out.println("Temperatura atingiu limite inferior");
+            //System.out.println("Temperatura atingiu limite inferior");
         } else if (actualTemp >= tempMax) {
             message = String.format(message, "máximo", sensor);
             statement.setString(6, message);
             statement.executeUpdate();
-            System.out.println("Temperatura atingiu limite superior");
+            //System.out.println("Temperatura atingiu limite superior");
         }
 
         statement.close();
@@ -369,17 +342,17 @@ public class TempsMigrator {
         // Add all the temperatures of the X records
         while (resultSet.next()) {
             averageTemp += resultSet.getDouble("Leitura");
+            System.out.println("Média " + averageTemp);
         }
 
         // Divide by the number of records (X)
         averageTemp = averageTemp / numberOfRecords;
 
-        System.out.println("THIS IS THE ACTUAL TEMP " + actualTemp + "THIS IS THE AVERAGE " + averageTemp);
+        System.out.println("THIS IS THE ACTUAL TEMP " + actualTemp + "THIS IS THE AVERAGE " + averageTemp + "Number of Records " + numberOfRecords);
+
         // If the actual temp is greater than the average + the value OutlierVariacaoTempMax then is outlier
         // Or if the actual temp is lower than the average - the value OutlierVariacaoTempMax then is outlier
-        if(actualTemp > averageTemp + watcher.getExperimentMaxTemp()) {
-            isOutlier = true;
-        } else if (actualTemp < averageTemp - watcher.getExperimentMaxTemp()) {
+        if(actualTemp > averageTemp + watcher.getExperimentMaxTemp() || actualTemp < averageTemp - watcher.getExperimentMaxTemp()) {
             isOutlier = true;
         }
 
@@ -394,13 +367,13 @@ public class TempsMigrator {
         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_COUNT_OUTLIERS_LAST_X_RECORDS);
         statement.setInt(1, sensor);
         statement.setInt(2, watcher.getOutlierRecordsNumber());
-        System.out.println("Number of records " + watcher.getOutlierRecordsNumber());
+        //System.out.println("Number of records " + watcher.getOutlierRecordsNumber());
         ResultSet resultSet = statement.executeQuery();
         int numberOfOutliers = 0;
 
         if(resultSet.next()) {
             numberOfOutliers =  resultSet.getInt( "outliers_count");
-            System.out.println("Count of outliers " + numberOfOutliers);
+            //System.out.println("Count of outliers " + numberOfOutliers);
         }
 
         String message = "Sensor de temperatura %d registou demasiados Outliers.";
@@ -415,6 +388,7 @@ public class TempsMigrator {
             message = String.format(message, sensor);
             statement.setString(6, message);
             statement.executeUpdate();
+            statement.close();
         }
     }
 
