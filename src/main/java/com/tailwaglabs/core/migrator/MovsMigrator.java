@@ -7,59 +7,100 @@ import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
 import org.bson.Document;
 
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.util.Properties;
+
 /**
  * Migrates and processes Movs sensor data: Mongo - MySQL
  * Executes - When an experiment is started (Django button starts this)
  */
 public class MovsMigrator {
 
+    // ini Mongo Properties
+    private String mongoHost = "localhost";
+    private int mongoPort = 27019;
+    private String mongoDatabase = "mqqt";
+    private String mongoCollection = "movs";
+
+    // ini MariaDB Properties
+    private String sqlConnection = "";
+    private String sqlusername = "";
+    private String sqlPassword = "";
+
     private MongoClient mongoClient;
     private MongoDatabase db;
-    private String host = "localhost";
-    private int port = 27019;
-    private String database = "mqqt";
-    private String collection = "movs";
-    private MongoCollection<Document> movsCollection;
+    private MongoCollection<Document> tempsCollection;
     private long currentTimestamp;
     private MongoCursor<Document> cursor;
+    private Connection mariadbConnection;
+    private boolean isBatchMigrated = true;
+    private final int MAX_NUMBER_OF_OUTLIERS = 3;
 
-    Document movsQuery = Document.parse("{q: [" +
-            "{ $match: {  $and: [ { Timestamp: { $gte: " + currentTimestamp + " } }, {Migrated: {$ne \"1\" }} ] } }," +
-            "{ $project: {_id: 1, Hora: 1, SalaDestino: 1, SalaOrigem: 1, Hora: 1 } }" +
-            "]}"
-    );
+    private final int MOVS_FREQUENCY = 10 * 1000; // 3 seconds
+
+    private final String QUERY_MONGO_GET_MOVS = """
+            { Timestamp: { $gte: %d }, Migrated: { $ne: '1' } }
+            """;
+
+
+    private void run() {
+        init();
+        migrationLoop();
+    }
 
     private void init() {
-        mongoClient = new MongoClient(host, port);
-        db = mongoClient.getDatabase(database);
-        movsCollection = db.getCollection(collection);
-        currentTimestamp = System.currentTimeMillis();
-        cursor = movsCollection.find(movsQuery).iterator();
-    }
+        try {
+            Properties p = new Properties();
+            p.load(new FileInputStream("config.ini"));
 
-    private void closeConnection() {
-        cursor.close();
-        mongoClient.close();
-    }
+            mongoHost = p.getProperty("mongo_host");
+            mongoPort = Integer.parseInt(p.getProperty("mongo_port"));
+            mongoDatabase = p.getProperty("mongo_database");
+            mongoCollection = p.getProperty("collection_temps");
 
-    private void loop() {
-        init();
-        while(cursor.hasNext()) {
-            Document mongoRecord = cursor.next();
+            sqlConnection = p.getProperty("sql_database_connection_to");
+            sqlPassword = p.getProperty("sql_database_password_to");
+            sqlusername = p.getProperty("sql_database_user_to");
+
+            mongoClient = new MongoClient(mongoHost, mongoPort);
+            db = mongoClient.getDatabase(mongoDatabase);
+            tempsCollection = db.getCollection(mongoCollection);
+            mariadbConnection = DriverManager.getConnection(sqlConnection, sqlusername, sqlPassword);
+        } catch (SQLException e) {
+            System.out.println("Error connecting to MariaDB." + e);
+        } catch (IOException e) {
+            System.out.println("Error reading config.ini file." + e);
         }
-        closeConnection();
+        currentTimestamp = System.currentTimeMillis();
     }
 
-    public void checkWrongTimestamp(Document doc) {
-        // TODO
-    }
+    private void migrationLoop() {
+        while (true) {
+            Document tempsQuery = Document.parse(String.format(QUERY_MONGO_GET_MOVS, currentTimestamp));
+            cursor = tempsCollection.find(tempsQuery).iterator();
 
-    public void checkWrongFormat() {
-        // TODO
-    }
+            Document doc = null;
+            while (cursor.hasNext()) {
+                doc = cursor.next();
+                System.out.println(doc);
+                //persistTemp(doc);
+            }
+            if (doc != null) {
+                currentTimestamp = System.currentTimeMillis();
+            }
 
-    public void insertRecordMysql(Document doc) {
-        // TODO
+            System.out.println("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
+            try {
+                //noinspection BusyWait
+                Thread.sleep(MOVS_FREQUENCY);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
 
@@ -68,8 +109,8 @@ public class MovsMigrator {
     public static void main(String[] args) {
         Thread.currentThread().setName("Main_Movs_Migration");
 
-        new MovsMigrator().loop();
-        
+        new MovsMigrator().migrationLoop();
+
     }
-    
+
 }

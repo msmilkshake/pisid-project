@@ -318,6 +318,10 @@ public class TempsMigrator {
 
     public boolean isOutlier(Document doc) throws SQLException {
 
+        if(!isExperimentRunning) {
+            return false;
+        }
+
         // Variable to be returned
         boolean isOutlier = false;
 
@@ -341,6 +345,7 @@ public class TempsMigrator {
 
         // Add all the temperatures of the X records
         while (resultSet.next()) {
+            System.out.println("Média Primeiro " + averageTemp);
             averageTemp += resultSet.getDouble("Leitura");
             System.out.println("Média " + averageTemp);
         }
@@ -360,6 +365,10 @@ public class TempsMigrator {
     }
 
     public void sendTooManyOutliersAlert(Document doc) throws SQLException {
+
+        if(!isExperimentRunning) {
+            return;
+        }
 
         int sensor = doc.getInteger("Sensor");
         double actualTemp = doc.getDouble("Leitura");
