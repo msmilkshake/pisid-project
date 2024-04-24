@@ -66,8 +66,8 @@ public class TempsMigrator {
             SELECT * FROM medicoestemperatura
             WHERE IsOutlier = 0
                 AND Sensor = ?
-            ORDER BY Hora DESC
-            LIMIT ?;                         
+            ORDER BY TimestampRegisto DESC
+            LIMIT ?;
             """;
 
     private final String QUERY_SQL_COUNT_OUTLIERS_LAST_X_RECORDS = """ 
@@ -76,15 +76,15 @@ public class TempsMigrator {
                 SELECT IsOutlier
                 FROM medicoestemperatura
                 WHERE Sensor = ?
-                ORDER BY Hora DESC
+                ORDER BY TimestampRegisto DESC
                 LIMIT ?
             ) AS ultimos_registros
-            WHERE IsOutlier = 1;                   
+            WHERE IsOutlier = 1;
             """;
 
     private boolean isExperimentRunning = true;
     private final Lock EXPERIMENT_LOCK = new ReentrantLock();
-    private final int TEMPS_FREQUENCY = 10 * 1000; // 3 seconds
+    private final int TEMPS_FREQUENCY = 3 * 1000; // 3 seconds
 
     private static ExperimentWatcher watcher;
 
@@ -318,10 +318,6 @@ public class TempsMigrator {
 
     public boolean isOutlier(Document doc) throws SQLException {
 
-        if(!isExperimentRunning) {
-            return false;
-        }
-
         // Variable to be returned
         boolean isOutlier = false;
 
@@ -343,21 +339,41 @@ public class TempsMigrator {
         statement.setInt(2, numberOfRecords);
         ResultSet resultSet = statement.executeQuery();
 
+
+        /*
+        int results = 0;
+
+        if (resultSet != null) {
+            resultSet.last(); // moves cursor to the last row
+            results = resultSet.getRow(); // get row number which is equal to the total number of rows
+            resultSet.beforeFirst(); // moves the cursor back to before the first row
+        }
+
+        System.out.println("Results " + results);
+         */
+
+
+
         // Add all the temperatures of the X records
         while (resultSet.next()) {
-            System.out.println("Média Primeiro " + averageTemp);
             averageTemp += resultSet.getDouble("Leitura");
-            System.out.println("Média " + averageTemp);
         }
 
         // Divide by the number of records (X)
-        averageTemp = averageTemp / numberOfRecords;
+        averageTemp /= numberOfRecords;
 
-        System.out.println("THIS IS THE ACTUAL TEMP " + actualTemp + "THIS IS THE AVERAGE " + averageTemp + "Number of Records " + numberOfRecords);
+
+        if(sensor == 2) {
+            System.out.println("MIN " + (averageTemp - watcher.getOutlierTempMaxVar()) + " ; MAX "+(averageTemp + watcher.getOutlierTempMaxVar()));
+
+            System.out.println("THIS IS THE ACTUAL TEMP " + actualTemp + "THIS IS THE AVERAGE " + averageTemp + "Number of Records " + numberOfRecords);
+        }
+
+
 
         // If the actual temp is greater than the average + the value OutlierVariacaoTempMax then is outlier
         // Or if the actual temp is lower than the average - the value OutlierVariacaoTempMax then is outlier
-        if(actualTemp > averageTemp + watcher.getExperimentMaxTemp() || actualTemp < averageTemp - watcher.getExperimentMaxTemp()) {
+        if(actualTemp > averageTemp + watcher.getOutlierTempMaxVar() || actualTemp < averageTemp - watcher.getOutlierTempMaxVar()) {
             isOutlier = true;
         }
 
