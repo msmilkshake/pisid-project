@@ -204,7 +204,7 @@ public class TempsMigrator {
 
             statement.setInt(6, validReading ? 0 : 1);
 
-            statement.setInt(7, isOutlier ? 0 : 1);
+            statement.setInt(7, isOutlier ? 1 : 0);
 
             statement.executeUpdate();
             ResultSet generatedKeys = statement.getGeneratedKeys();
