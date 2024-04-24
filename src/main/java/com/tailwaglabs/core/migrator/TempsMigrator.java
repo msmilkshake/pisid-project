@@ -7,13 +7,11 @@ import com.mongodb.client.MongoDatabase;
 import com.tailwaglabs.core.AlertType;
 import com.tailwaglabs.core.ExperimentWatcher;
 import org.bson.Document;
-import org.bson.conversions.Bson;
 
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.sql.*;
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -66,6 +64,8 @@ public class TempsMigrator {
             SELECT * FROM medicoestemperatura
             WHERE IsOutlier = 0
                 AND Sensor = ?
+                AND TimestampRegisto < ?
+                AND TimestampRegisto > ?
             ORDER BY TimestampRegisto DESC
             LIMIT ?;
             """;
@@ -86,7 +86,7 @@ public class TempsMigrator {
     private final Lock EXPERIMENT_LOCK = new ReentrantLock();
     private final int TEMPS_FREQUENCY = 3 * 1000; // 3 seconds
 
-    private static ExperimentWatcher watcher;
+    private ExperimentWatcher watcher = ExperimentWatcher.getInstance();
 
 
     private void run() {
@@ -154,10 +154,11 @@ public class TempsMigrator {
         // Faz as validações para saber se lança os alertas
         // mas os registo são inseridos na mesma no Mysql
         // Se falha alguma coisa insere alerta mas não insere o registo??
+
         try {
+            isOutlier = isOutlier(doc);
             checkLimitProximity(doc);
             limitReached(doc);
-            isOutlier = isOutlier(doc);
             sendTooManyOutliersAlert(doc);
         } catch (SQLException e) {
             System.out.println("Error connecting to MariaDB." + e);
@@ -318,9 +319,6 @@ public class TempsMigrator {
 
     public boolean isOutlier(Document doc) throws SQLException {
 
-        // Variable to be returned
-        boolean isOutlier = false;
-
         // Get the Sensor
         int sensor = doc.getInteger("Sensor");
 
@@ -328,7 +326,8 @@ public class TempsMigrator {
         double actualTemp = doc.getDouble("Leitura");
 
         // Variable to store the average temperature
-        double averageTemp = 0;
+        double sumTemp = 0;
+        long timestamp = doc.getLong("Timestamp");
 
         // Number of records to get from the db, value defined in each experiment
         int numberOfRecords = watcher.getOutlierRecordsNumber();
@@ -337,8 +336,9 @@ public class TempsMigrator {
         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_LAST_X_RECORDS);
         statement.setInt(1, sensor);
         statement.setInt(2, numberOfRecords);
+        statement.setLong(3, timestamp);
+        statement.setLong(4, timestamp - (long) numberOfRecords * 1000);
         ResultSet resultSet = statement.executeQuery();
-
 
         /*
         int results = 0;
@@ -355,29 +355,27 @@ public class TempsMigrator {
 
 
         // Add all the temperatures of the X records
+        int i = 1;
         while (resultSet.next()) {
-            averageTemp += resultSet.getDouble("Leitura");
+            System.out.println("##Reading #" + i++ + ": " + resultSet.getDouble("Leitura"));
+            sumTemp += resultSet.getDouble("Leitura");
         }
 
         // Divide by the number of records (X)
-        averageTemp /= numberOfRecords;
-
+        double averageTemp = sumTemp / numberOfRecords;
 
         if(sensor == 2) {
             System.out.println("MIN " + (averageTemp - watcher.getOutlierTempMaxVar()) + " ; MAX "+(averageTemp + watcher.getOutlierTempMaxVar()));
-
             System.out.println("THIS IS THE ACTUAL TEMP " + actualTemp + "THIS IS THE AVERAGE " + averageTemp + "Number of Records " + numberOfRecords);
         }
-
-
 
         // If the actual temp is greater than the average + the value OutlierVariacaoTempMax then is outlier
         // Or if the actual temp is lower than the average - the value OutlierVariacaoTempMax then is outlier
         if(actualTemp > averageTemp + watcher.getOutlierTempMaxVar() || actualTemp < averageTemp - watcher.getOutlierTempMaxVar()) {
-            isOutlier = true;
+            return true;
         }
 
-        return isOutlier;
+        return false;
     }
 
     public void sendTooManyOutliersAlert(Document doc) throws SQLException {
@@ -421,8 +419,6 @@ public class TempsMigrator {
         Thread.currentThread().setName("Main_Temps_Migration");
 
         // Immediately launches the Thread: Thread_Experiment_Watcher 
-        watcher = new ExperimentWatcher();
-        watcher.start();
         new TempsMigrator().run();
 
     }

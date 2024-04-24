@@ -5,6 +5,7 @@ import com.mongodb.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
+import com.tailwaglabs.core.ExperimentWatcher;
 import org.bson.Document;
 
 import java.io.FileInputStream;
@@ -19,6 +20,8 @@ import java.util.Properties;
  * Executes - When an experiment is started (Django button starts this)
  */
 public class MovsMigrator {
+
+    private ExperimentWatcher watcher = ExperimentWatcher.getInstance();
 
     // ini Mongo Properties
     private String mongoHost = "localhost";
@@ -87,7 +90,7 @@ public class MovsMigrator {
             while (cursor.hasNext()) {
                 doc = cursor.next();
                 System.out.println(doc);
-                //persistTemp(doc);
+                 // persistMov(doc); // TODO-> valida a passagem etc etc...
             }
             if (doc != null) {
                 currentTimestamp = System.currentTimeMillis();

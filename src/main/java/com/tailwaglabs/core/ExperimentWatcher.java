@@ -1,10 +1,7 @@
 package com.tailwaglabs.core;
 
 import com.mongodb.MongoClient;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
-import org.bson.Document;
 
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -21,6 +18,15 @@ import java.util.TimerTask;
  */
 public class ExperimentWatcher extends Thread {
 
+    private static ExperimentWatcher watcher = new ExperimentWatcher();
+
+    static {
+        watcher.start();
+    }
+
+    public static ExperimentWatcher getInstance() {
+        return watcher;
+    }
 
     // ini MariaDB Properties
     private String sqlConnection = "";

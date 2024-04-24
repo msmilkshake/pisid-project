@@ -20,7 +20,7 @@ clientMqttMovements = mqtt.Client()
 clientMqttMovements.on_connect = on_connectMqttTemp
 clientMqttMovements.connect(host, port)
 
-prc_outlier = 0.1
+prc_outlier = 0.05
 prc_rampage = 0.00
 
 regular_temp_variation = 0.6
