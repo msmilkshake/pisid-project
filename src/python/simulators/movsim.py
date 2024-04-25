@@ -88,7 +88,7 @@ clientMqttMovements.connect(host, port)
 
 
 def on_button_click(data):
-    json_string = json.dumps(data, indent=4)
+    # json_string = json.dumps(data, indent=4)
     # print(f'Button clicked. JSON object: \n{json_string}')
     a = data['salaa']
     b = data['salab']
@@ -153,3 +153,5 @@ for i, json_object in enumerate(self_paired_rooms):
     button.grid(row=i // columns, column=i % columns, padx=5, pady=5)
 
 root.mainloop()
+mqtt_thread = threading.Thread(target=run_mqtt)
+mqtt_thread.start()
