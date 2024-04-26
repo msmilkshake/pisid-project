@@ -105,6 +105,13 @@ def on_button_click(data):
     clientMqttMovements.publish(topic, jsonString, qos=2)
     clientMqttMovements.loop()
 
+def send_string_message(txt):
+    message = txt.get()
+    print("Sending message:", message)
+    clientMqttMovements.publish(topic, message, qos=2)
+    clientMqttMovements.loop()
+    txt.delete(0, 'end')
+
 
 root = tk.Tk()
 
@@ -151,6 +158,14 @@ for i, json_object in enumerate(self_paired_rooms):
     button_text = f"{json_object['salaa']} -> {json_object['salab']}"
     button = tk.Button(frame6, text=button_text, command=lambda obj=json_object: on_button_click(obj))
     button.grid(row=i // columns, column=i % columns, padx=5, pady=5)
+
+
+label_message = tk.Label(root, text='Message')
+label_message.pack()
+message_entry = tk.Entry(root)
+message_entry.pack(fill=tk.X, expand=True)  # stretches to fill the window width
+message_button = tk.Button(root, text="Send Message", command=lambda: send_string_message(message_entry))
+message_button.pack()
 
 root.mainloop()
 mqtt_thread = threading.Thread(target=run_mqtt)

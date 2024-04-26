@@ -40,9 +40,6 @@ public class ExperimentWatcher extends Thread {
 
     private Connection mariadbConnection;
 
-
-    Timer timer = null;
-
     private final int REFRESH_RATE = 1 * 1000; // 1 second
     private final int EXPERIMENT_MAX_DURATION = 1 * 15 * 1000;
 
@@ -69,6 +66,7 @@ public class ExperimentWatcher extends Thread {
             WHERE IDEstado = 2;
             """;
 
+    Timer timer = null;
     TimerTask experimentLimitTask = null;
 
     public static void setMigratorInstance(TempsMigrator migrator) {
@@ -79,7 +77,7 @@ public class ExperimentWatcher extends Thread {
         return new TimerTask() {
             @Override
             public void run() {
-                myMethod();
+                experimentRunningLimit();
             }
         };
     }
@@ -109,11 +107,6 @@ public class ExperimentWatcher extends Thread {
         Thread.currentThread().setName("Thread_Experiment_Watcher");
         init();
         watchLoop();
-        try {
-            setExperimentParameters();
-        } catch (SQLException e) {
-            throw new RuntimeException(e);
-        }
     }
 
     public void watchLoop() {
@@ -206,7 +199,7 @@ public class ExperimentWatcher extends Thread {
         experimentLimitTask = null;
     }
 
-    public void myMethod() {
+    public void experimentRunningLimit() {
         // TODO: This method runs after 10 minutes
         // ALERT Experiment duration
         System.out.println("ALERT - EXPERIMENT RUNNING FOR 15 SECONDS!!");

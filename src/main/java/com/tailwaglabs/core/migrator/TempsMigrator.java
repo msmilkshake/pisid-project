@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -117,6 +118,7 @@ public class TempsMigrator {
 
     private void init() {
         try {
+            ExperimentWatcher.setMigratorInstance(this);
             restartQueues();
             Properties p = new Properties();
             p.load(new FileInputStream("config.ini"));
@@ -147,6 +149,17 @@ public class TempsMigrator {
             Document tempsQuery = Document.parse(String.format(QUERY_MONGO_GET_TEMPS, currentTimestamp));
             cursor = tempsCollection.find(tempsQuery).iterator();
 
+            // TODO @Rcarvalho18 - AUSENCIA DE LEITURAS
+            // Começamos com um boolean a false - Indica que não há agendamento a decorrer
+            // Se chegarem 0 resultados na tempsQuery && se a flag estiver a false
+            // Então agendar tarefa de ausencia de leituras e colocar a flag a true.
+            // Se antes da tarefa agendada executar chegarem leituras, Cancelar o agendamento e colocar as duas flags a false
+            // Após os 15 segundos continua sempre a lançar o alerta pq o SPAM é tratado na BD.
+
+            // A tarefa coloca uma segunda flag a true.
+            // Tratamos do alerta aqui neste sítio se a segunda flag estiver a true.
+
+
             Document doc = null;
             while (cursor.hasNext()) {
                 doc = cursor.next();
@@ -169,7 +182,7 @@ public class TempsMigrator {
 
     public void persistTemp(Document doc) {
 
-        Boolean validReading = validateReading(doc);
+        Boolean isValidReading = validateReading(doc);
 
         Double reading = doc.getDouble("Leitura");
         Integer sensor = doc.getInteger("Sensor");
@@ -180,11 +193,9 @@ public class TempsMigrator {
                 null;
 
         boolean isOutlier = false;
-        boolean isWrongTimeStamp = false;
 
-        if (isExperimentRunning) {
+        if (isExperimentRunning && isValidReading) {
             try {
-                isWrongTimeStamp = isWrongTimestamp(doc);
                 isOutlier = isOutlier(doc);
                 checkLimitProximity(doc);
                 limitReached(doc);
@@ -240,7 +251,7 @@ public class TempsMigrator {
                 statement.setLong(5, recordedTimestamp);
             }
 
-            statement.setInt(6, validReading && !isWrongTimeStamp ? 0 : 1);
+            statement.setInt(6, isValidReading ? 0 : 1);
 
             statement.setInt(7, isOutlier ? 1 : 0);
 
@@ -263,16 +274,17 @@ public class TempsMigrator {
         boolean validFormat = doc.containsKey("Leitura") &&
                 doc.containsKey("Sensor") &&
                 doc.containsKey("Hora") &&
-                doc.containsKey("Timestamp");
+                doc.containsKey("Timestamp") &&
+                !isWrongTimestamp(doc);
 
-        /*
-        long timestamp = doc.getLong("Timestamp");
-        long current = System.currentTimeMillis();
-        // Timestamp is before current timestamp but not older than 15 minutes
-        boolean validTime = timestamp < current && timestamp > current - 15 * 60 * 1000;
+        try {
+            doc.getDouble("Leitura");
+            doc.getInteger("Sensor");
+            doc.getLong("Timestamp");
+        } catch (ClassCastException e) {
+            return false;
+        }
 
-        return validFormat && validTime;
-         */
         return validFormat;
     }
 
@@ -420,7 +432,7 @@ public class TempsMigrator {
 
         boolean isOutlier =
                 currentReading > regressedTemp + watcher.getOutlierTempMaxVar() ||
-                currentReading < regressedTemp - watcher.getOutlierTempMaxVar();
+                        currentReading < regressedTemp - watcher.getOutlierTempMaxVar();
 
         boolean isOutlierWithOutlier =
                 currentReading > outlierRegressedTemp + watcher.getOutlierTempMaxVar() ||
@@ -473,8 +485,12 @@ public class TempsMigrator {
 
         // Get the field hour and convert it to LocalDateTime
         String hourFromMongoString = doc.get("Hora").toString();
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS");
-        LocalDateTime hourFromMongo = LocalDateTime.parse(hourFromMongoString, formatter);
+        LocalDateTime hourFromMongo = null;
+        try {
+            hourFromMongo = LocalDateTime.parse(hourFromMongoString.replace(" ", "T"));
+        } catch (DateTimeParseException e) {
+            return false;
+        }
 
         // Get the Timestamp and convert it to LocalDateTime
         Instant instant = Instant.ofEpochMilli(doc.getLong("Timestamp"));
@@ -501,10 +517,9 @@ public class TempsMigrator {
     public static void main(String[] args) {
         Thread.currentThread().setName("Main_Temps_Migration");
 
-        // Immediately launches the Thread: Thread_Experiment_Watcher 
+        // Immediately launches the Thread: Thread_Experiment_Watcher
         TempsMigrator migrator = new TempsMigrator();
         migrator.run();
-        ExperimentWatcher.setMigratorInstance(migrator);
 
     }
 

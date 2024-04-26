@@ -182,6 +182,14 @@ def rampage_2():
         print(f"-- Sensor 2 Rampage is off. Consider manually setting Temperature 2.")
 
 
+def send_string_message(txt):
+    message = txt.get()
+    print("Sending message:", message)
+    clientMqttMovements.publish(topic, message, qos=2)
+    clientMqttMovements.loop()
+    txt.delete(0, 'end')  # clear the input field after sending
+
+
 root = Tk()
 entry_pairs = 2  # Number of entry-button pairs in a row
 fields_per_row = 3  # Number of rows
@@ -203,6 +211,13 @@ b1 = Button(root, text="Start Sensor 1 Rampage", command=rampage_1)
 b1.grid(row=fields_per_row * 3, column=0)
 b2 = Button(root, text="Start Sensor 2 Rampage", command=rampage_2)
 b2.grid(row=fields_per_row * 3, column=2)
+
+Label(root, text='Message').grid(row=fields_per_row * 3 + 1, column=0, sticky='w')
+message_entry = Entry(root)
+message_entry.grid(row=fields_per_row * 3 + 2, column=0, columnspan=50, sticky="ew")
+root.grid_columnconfigure(0, weight=1)  # makes column 0 expandable
+message_button = Button(root, text="Send Message", command=lambda: send_string_message(message_entry))
+message_button.grid(row=fields_per_row * 3 + 3, column=0, columnspan=50, sticky="ew")
 
 root.update()
 window_width = root.winfo_width()
