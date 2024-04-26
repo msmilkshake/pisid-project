@@ -2,6 +2,7 @@ package com.tailwaglabs.core;
 
 import com.mongodb.MongoClient;
 import com.mongodb.client.MongoDatabase;
+import com.tailwaglabs.core.migrator.TempsMigrator;
 
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -13,12 +14,13 @@ import java.util.TimerTask;
 /**
  * This thread is responsible for detecting when an experiment starts.
  * It's also responsible to check if an experiment exceeded 10 mins
- *
+ * <p>
  * The TempsMNigrator class runs this thread when it starts.
  */
 public class ExperimentWatcher extends Thread {
 
     private static ExperimentWatcher watcher = new ExperimentWatcher();
+    private static TempsMigrator migrator = null;
 
     static {
         watcher.start();
@@ -39,11 +41,12 @@ public class ExperimentWatcher extends Thread {
     private Connection mariadbConnection;
 
 
-    Timer timer = new Timer();
+    Timer timer = null;
 
-    private int experimentDuration = 10 * 60 * 1000;
+    private final int REFRESH_RATE = 1 * 1000; // 1 second
+    private final int EXPERIMENT_MAX_DURATION = 1 * 15 * 1000;
 
-    private int idExperiment = 1;
+    private Long idExperiment = null;
 
     private double experimentMinTemp;
     private double experimentMaxTemp;
@@ -58,12 +61,26 @@ public class ExperimentWatcher extends Thread {
             WHERE experiencia.IDExperiencia = ?;
             """;
 
-    TimerTask task = new TimerTask() {
-        @Override
-        public void run() {
-            myMethod();
-        }
-    };
+    public final String QUERY_SQL_GET_RUNNING_EXPERIMENT = """
+            SELECT IDExperiencia
+            FROM experiencia
+            WHERE IDEstado = 2;
+            """;
+
+    TimerTask experimentLimitTask = null;
+
+    public static void setMigratorInstance(TempsMigrator migrator) {
+        ExperimentWatcher.migrator = migrator;
+    }
+
+    private TimerTask createExperimentLimitTask() {
+        return new TimerTask() {
+            @Override
+            public void run() {
+                myMethod();
+            }
+        };
+    }
 
 
     private void init() {
@@ -89,6 +106,7 @@ public class ExperimentWatcher extends Thread {
     public void run() {
         Thread.currentThread().setName("Thread_Experiment_Watcher");
         init();
+        watchLoop();
         try {
             setExperimentParameters();
         } catch (SQLException e) {
@@ -96,20 +114,56 @@ public class ExperimentWatcher extends Thread {
         }
     }
 
-    public int getIdExperiment() {
+    public void watchLoop() {
+        while (true) {
+            try {
+                ResultSet experimentResults = mariadbConnection.createStatement()
+                        .executeQuery(QUERY_SQL_GET_RUNNING_EXPERIMENT);
+
+                if (experimentResults.isBeforeFirst() && idExperiment == null) {
+                    experimentResults.next();
+                    idExperiment = experimentResults.getLong(1);
+                    setExperimentParameters();
+                    TempsMigrator.setExperimentRunning(true);
+                    experimentLimitTask = createExperimentLimitTask();
+                    startTimer();
+                    migrator.restartQueues();
+                    System.out.println("[" + Thread.currentThread().getName() + "] Experiment #" + idExperiment + " started.");
+                } else if (!experimentResults.isBeforeFirst() && idExperiment != null) {
+                    TempsMigrator.setExperimentRunning(false);
+                    stopTimer();
+                    System.out.println("[" + Thread.currentThread().getName() + "] Experiment #" + idExperiment + " ended.");
+                    idExperiment = null;
+                }
+
+
+                System.out.println("[" + Thread.currentThread().getName() + "] Sleeping " + (REFRESH_RATE / 1000) + " seconds.");
+                Thread.sleep(REFRESH_RATE);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    public Long getIdExperiment() {
         return idExperiment;
     }
 
     public void setExperimentParameters() throws SQLException {
         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_TEMP_MIN_MAX);
-        statement.setInt(1, idExperiment);
+        statement.setLong(1, idExperiment);
         ResultSet resultSet = statement.executeQuery();
 
-        if(resultSet.next()) {
-            experimentMinTemp = resultSet.getDouble("TemperaturaMinima");;
-            experimentMaxTemp = resultSet.getDouble("TemperaturaMaxima");;
+        if (resultSet.next()) {
+            experimentMinTemp = resultSet.getDouble("TemperaturaMinima");
+
+            experimentMaxTemp = resultSet.getDouble("TemperaturaMaxima");
+
             outlierTempMaxVar = resultSet.getDouble("OutlierVariacaoTempMax");
-            outlierRecordsNumber = resultSet.getInt("OutlierLeiturasNumero");;
+            outlierRecordsNumber = resultSet.getInt("OutlierLeiturasNumero");
+
         }
     }
 
@@ -131,18 +185,22 @@ public class ExperimentWatcher extends Thread {
 
     // Call this when an experiment starts
     private void startTimer() {
-        timer.schedule(task, experimentDuration);
+        timer = new Timer();
+        timer.schedule(experimentLimitTask, EXPERIMENT_MAX_DURATION);
     }
 
     // Call this when an experimnent ends
     private void stopTimer() {
-        task.cancel();
+        experimentLimitTask.cancel();
         timer.cancel();
         timer.purge();
+        timer = null;
+        experimentLimitTask = null;
     }
 
     public void myMethod() {
-        // TODO: Tis method runs after 10 minutes
+        // TODO: This method runs after 10 minutes
         // ALERT Experiment duration
+        System.out.println("ALERT - EXPERIMENT RUNNING FOR 15 SECONDS!!");
     }
 }
