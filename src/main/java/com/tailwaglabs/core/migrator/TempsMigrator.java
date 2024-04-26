@@ -4,6 +4,7 @@ import com.mongodb.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
+import com.tailwaglabs.core.AlertSubType;
 import com.tailwaglabs.core.AlertType;
 import com.tailwaglabs.core.ExperimentWatcher;
 import org.apache.commons.math3.analysis.polynomials.PolynomialFunction;
@@ -14,7 +15,10 @@ import org.bson.Document;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.sql.*;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -64,8 +68,8 @@ public class TempsMigrator {
     // TODO Investigar pq é preciso dividir por 1000
 
     private final String QUERY_SQL_INSERT_TEMP_ALERT = """ 
-            INSERT INTO alerta(IDExperiencia, Hora, Sensor, Leitura, TipoAlerta, Mensagem)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO alerta(IDExperiencia, Hora, Sensor, Leitura, TipoAlerta, Mensagem, SubTipoAlerta)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """;
 
     private final String QUERY_SQL_GET_LAST_X_RECORDS = """ 
@@ -176,9 +180,11 @@ public class TempsMigrator {
                 null;
 
         boolean isOutlier = false;
+        boolean isWrongTimeStamp = false;
 
         if (isExperimentRunning) {
             try {
+                isWrongTimeStamp = isWrongTimestamp(doc);
                 isOutlier = isOutlier(doc);
                 checkLimitProximity(doc);
                 limitReached(doc);
@@ -234,7 +240,7 @@ public class TempsMigrator {
                 statement.setLong(5, recordedTimestamp);
             }
 
-            statement.setInt(6, validReading ? 0 : 1);
+            statement.setInt(6, validReading && !isWrongTimeStamp ? 0 : 1);
 
             statement.setInt(7, isOutlier ? 1 : 0);
 
@@ -259,12 +265,15 @@ public class TempsMigrator {
                 doc.containsKey("Hora") &&
                 doc.containsKey("Timestamp");
 
+        /*
         long timestamp = doc.getLong("Timestamp");
         long current = System.currentTimeMillis();
         // Timestamp is before current timestamp but not older than 15 minutes
         boolean validTime = timestamp < current && timestamp > current - 15 * 60 * 1000;
 
         return validFormat && validTime;
+         */
+        return validFormat;
     }
 
     public void checkLimitProximity(Document doc) throws SQLException {
@@ -296,11 +305,13 @@ public class TempsMigrator {
         if (actualTemp <= minLimit && actualTemp >= tempMin) {
             message = String.format(message, "inferior", sensor);
             statement.setString(6, message);
+            statement.setInt(7, AlertSubType.TEMPERATURE_NEAR_LIMIT_MIN.getValue());
             statement.executeUpdate();
             //System.out.println("Temperatura próxima do limite inferior");
         } else if (actualTemp >= maxLimit && actualTemp <= tempMax) {
             message = String.format(message, "superior", sensor);
             statement.setString(6, message);
+            statement.setInt(7, AlertSubType.TEMPERATURE_NEAR_LIMIT_MAX.getValue());
             statement.executeUpdate();
             //System.out.println("Temperatura próxima do limite superior");
         }
@@ -331,11 +342,13 @@ public class TempsMigrator {
         if (actualTemp <= tempMin) {
             message = String.format(message, "mínimo", sensor);
             statement.setString(6, message);
+            statement.setInt(7, AlertSubType.TEMPERATURE_LIMIT_REACHED_MIN.getValue());
             statement.executeUpdate();
             //System.out.println("Temperatura atingiu limite inferior");
         } else if (actualTemp >= tempMax) {
             message = String.format(message, "máximo", sensor);
             statement.setString(6, message);
+            statement.setInt(7, AlertSubType.TEMPERATURE_LIMIT_REACHED_MAX.getValue());
             statement.executeUpdate();
             //System.out.println("Temperatura atingiu limite superior");
         }
@@ -448,9 +461,41 @@ public class TempsMigrator {
             statement.setInt(5, AlertType.INFORMATIVO.getValue());
             message = String.format(message, sensor);
             statement.setString(6, message);
+            statement.setInt(7, AlertSubType.TEMPERATURE_OUTLIERS.getValue());
             statement.executeUpdate();
             statement.close();
         }
+    }
+
+    public boolean isWrongTimestamp(Document doc) {
+
+        boolean isWrongTimestamp = false;
+
+        // Get the field hour and convert it to LocalDateTime
+        String hourFromMongoString = doc.get("Hora").toString();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS");
+        LocalDateTime hourFromMongo = LocalDateTime.parse(hourFromMongoString, formatter);
+
+        // Get the Timestamp and convert it to LocalDateTime
+        Instant instant = Instant.ofEpochMilli(doc.getLong("Timestamp"));
+        LocalDateTime timeStampFromMongo = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
+
+        // Variable to store 15 earlier than the Timestamp
+        LocalDateTime fifteenMinutesEarlier = timeStampFromMongo.minusMinutes(15);
+
+        // If the field Hora from Mongo is after than the timestamp then send alert
+        int compareHourWithTimeStamp = hourFromMongo.compareTo(timeStampFromMongo);
+
+        // If the field Hora from Mongo is 15 minutes earlier than the Timestamp then send alert
+        int checkLastFifteenMinutes = hourFromMongo.compareTo(fifteenMinutesEarlier);
+
+        if (compareHourWithTimeStamp > 0 || checkLastFifteenMinutes < 0) {
+            isWrongTimestamp = true;
+
+        }
+
+        return isWrongTimestamp;
+
     }
 
     public static void main(String[] args) {
