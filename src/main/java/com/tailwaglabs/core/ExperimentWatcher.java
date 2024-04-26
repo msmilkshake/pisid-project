@@ -7,6 +7,7 @@ import com.tailwaglabs.core.migrator.TempsMigrator;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.sql.*;
+import java.time.LocalDateTime;
 import java.util.Properties;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -66,6 +67,11 @@ public class ExperimentWatcher extends Thread {
             WHERE IDEstado = 2;
             """;
 
+    private final String QUERY_SQL_INSERT_TEMP_ALERT = """ 
+            INSERT INTO alerta(IDExperiencia, Hora, TipoAlerta, Mensagem, SubTipoAlerta)
+            VALUES (?, ?, ?, ?, ?)
+            """;
+
     Timer timer = null;
     TimerTask experimentLimitTask = null;
 
@@ -77,7 +83,11 @@ public class ExperimentWatcher extends Thread {
         return new TimerTask() {
             @Override
             public void run() {
-                experimentRunningLimit();
+                try {
+                    experimentRunningLimit();
+                } catch (SQLException e) {
+                    throw new RuntimeException(e);
+                }
             }
         };
     }
@@ -199,9 +209,18 @@ public class ExperimentWatcher extends Thread {
         experimentLimitTask = null;
     }
 
-    public void experimentRunningLimit() {
-        // TODO: This method runs after 10 minutes
-        // ALERT Experiment duration
+    public void experimentRunningLimit() throws SQLException {
+
+        String message = "Experiência a decorrer há mais de 10 minutos.";
+        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+        statement.setLong(1, watcher.getIdExperiment());
+        statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+        statement.setInt(3, AlertType.INFORMATIVO.getValue());
+        statement.setString(4, message);
+        statement.setInt(5, AlertSubType.EXPERIMENT_DURATION.getValue());
+        statement.executeUpdate();
+        statement.close();
+
         System.out.println("ALERT - EXPERIMENT RUNNING FOR 15 SECONDS!!");
     }
 }

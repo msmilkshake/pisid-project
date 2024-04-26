@@ -118,7 +118,6 @@ public class MovsMigrator {
             Iterator<Document> cursor = results.iterator();
             while (cursor.hasNext()) {
 
-                // TODO test both alerts
                 tooManyMiceInTheRoom(doc);
                 movementAbsence(doc);
 
