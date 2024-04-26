@@ -6,16 +6,15 @@ import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
+import com.tailwaglabs.core.AlertSubType;
+import com.tailwaglabs.core.AlertType;
 import com.tailwaglabs.core.ExperimentWatcher;
 import org.bson.BsonDocument;
 import org.bson.Document;
 
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -56,13 +55,25 @@ public class MovsMigrator {
 
     private final int MOVS_FREQUENCY = 3 * 1000; // 3 seconds
 
+    private HashMap<Integer, Integer> rooms_population = new HashMap<>();
+
     private final String QUERY_MONGO_GET_MOVS = """
             { Timestamp: { $gte: %d }, Migrated: { $ne: '1' } }
             """;
 
+    private final String QUERY_SQL_INSERT_TEMP_ALERT = """ 
+            INSERT INTO alerta(IDExperiencia, Hora, SalaOrigem, SalaDestino, TipoAlerta, Mensagem, SubTipoAlerta)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """;
+
     private void run() {
         init();
-        migrationLoop();
+        try {
+            migrationLoop();
+        } catch (SQLException e) {
+            System.out.println("Error connecting to MariaDB." + e);
+        }
+
     }
 
     private void init() {
@@ -92,11 +103,10 @@ public class MovsMigrator {
         currentTimestamp = System.currentTimeMillis();
     }
 
-    private void migrationLoop() {
+    private void migrationLoop() throws SQLException {
         int[][] topology = new ConnectToMysql().getTopology(); // get labyrinth topology from relational
         System.out.println("Labyrinth topology:");
         ConnectToMysql.show_matrix(topology); // show labyrinth topology retrieved from relational
-        HashMap<Integer, Integer> rooms_population = new HashMap<>();
         rooms_population.put(1, 20); // 20 mice on room 1 at startup for testing purposes
         for (int i = 2 ; i <= 10; i++) { // remaining 9 rooms with 0 mice
             rooms_population.put(i, 0);
@@ -107,19 +117,38 @@ public class MovsMigrator {
             Document doc = null;
             Iterator<Document> cursor = results.iterator();
             while (cursor.hasNext()) {
+
+                // TODO test both alerts
+                tooManyMiceInTheRoom(doc);
+                movementAbsence(doc);
+
                 doc = cursor.next();
-                int from_room = (Integer) doc.get("SalaOrigem");
-                int to_room = (Integer) doc.get("SalaDestino");
-                if (from_room == to_room) {
+                int from_room = doc.getInteger("SalaOrigem");
+                int to_room = doc.getInteger("SalaDestino");
+
+                if (from_room == to_room || topology[from_room][to_room] == 0 || rooms_population.get(from_room) == 0) {
+
+                    String message = "Movimento ilegal detetado entre a Sala %d e a sala %d.";
+                    message = String.format(message, from_room, to_room);
+
+                    PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+                    statement.setLong(1, watcher.getIdExperiment());
+                    statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+                    statement.setInt(3, from_room);
+                    statement.setInt(4, to_room);
+                    statement.setInt(5, AlertType.AVISO.getValue());
+                    statement.setString(6, message);
+                    statement.setInt(7, AlertSubType.ILLEGAL_MOVEMENT.getValue());
+                    statement.executeUpdate();
+
+                    statement.close();
+
                     System.out.println("ALERT: movement to SAME ROOM - invalid movement!");
-                } else if (topology[from_room][to_room] == 0) {
-                    System.out.println("ALERT: rooms NOT CONNECTED - invalid movement!");
-                } else if (rooms_population.get(from_room) == 0) {
-                    System.out.println("ALERT: room is EMPTY - invalid movement!");
+
                 } else {  // movement can be performed
                     rooms_population.put(to_room, rooms_population.get(to_room) + 1);
                     rooms_population.put(from_room, rooms_population.get(from_room) - 1);
-                    persistMov(doc, System.currentTimeMillis(), 1); // Value 1 is hard coded EXPERIENCE NUMBER
+                    persistMov(doc, System.currentTimeMillis(), watcher.getIdExperiment());
                 }
                 System.out.println("Mice in rooms: " + rooms_population);
 
@@ -136,6 +165,7 @@ public class MovsMigrator {
             }
         }
     }
+
     public void persistMov(Document doc, long timestamp, long experiencia) {
         int salaOrigem = doc.getInteger("SalaOrigem");
         int salaDestino = doc.getInteger("SalaDestino");
@@ -165,8 +195,20 @@ public class MovsMigrator {
         }
     }
 
+    public void tooManyMiceInTheRoom(Document doc) {
 
-    public static void main(String[] args) {
+        int miceLimit = watcher.getMiceLimit();
+
+        // TODO
+        // compare with the hashMap
+
+    }
+
+    public void movementAbsence(Document doc) {
+        // TODO
+    }
+
+    public static void main(String[] args) throws SQLException {
         Thread.currentThread().setName("Main_Movs_Migration");
 
         MovsMigrator movsMigrator = new MovsMigrator();

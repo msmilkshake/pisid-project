@@ -52,10 +52,12 @@ public class ExperimentWatcher extends Thread {
     private double experimentMaxTemp;
     private double outlierTempMaxVar;
     private int outlierRecordsNumber;
+    private int miceLimit;
 
     private final String QUERY_SQL_GET_TEMP_MIN_MAX = """ 
             SELECT parametrosexperiencia.TemperaturaMaxima, parametrosexperiencia.TemperaturaMinima,
-            parametrosexperiencia.OutlierVariacaoTempMax, parametrosexperiencia.OutlierLeiturasNumero
+            parametrosexperiencia.OutlierVariacaoTempMax, parametrosexperiencia.OutlierLeiturasNumero,
+            parametrosexperiencia.LimiteRatosSala
             FROM experiencia
             JOIN parametrosexperiencia ON experiencia.IDParametros = parametrosexperiencia.IDParametros
             WHERE experiencia.IDExperiencia = ?;
@@ -164,6 +166,8 @@ public class ExperimentWatcher extends Thread {
             outlierTempMaxVar = resultSet.getDouble("OutlierVariacaoTempMax");
             outlierRecordsNumber = resultSet.getInt("OutlierLeiturasNumero");
 
+            miceLimit = resultSet.getInt("LimiteRatosSala");
+
         }
     }
 
@@ -181,6 +185,10 @@ public class ExperimentWatcher extends Thread {
 
     public int getOutlierRecordsNumber() {
         return outlierRecordsNumber;
+    }
+
+    public int getMiceLimit() {
+        return miceLimit;
     }
 
     // Call this when an experiment starts
