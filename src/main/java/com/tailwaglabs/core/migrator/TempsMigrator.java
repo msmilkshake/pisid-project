@@ -7,6 +7,7 @@ import com.mongodb.client.MongoDatabase;
 import com.tailwaglabs.core.AlertSubType;
 import com.tailwaglabs.core.AlertType;
 import com.tailwaglabs.core.ExperimentWatcher;
+import com.tailwaglabs.core.Logger;
 import org.apache.commons.math3.analysis.polynomials.PolynomialFunction;
 import org.apache.commons.math3.fitting.PolynomialCurveFitter;
 import org.apache.commons.math3.fitting.WeightedObservedPoints;
@@ -34,6 +35,8 @@ import java.util.stream.IntStream;
  */
 public class TempsMigrator {
 
+    private final boolean LOGGER_ENABLED = true;
+
     // ini Mongo Properties
     private String mongoHost = "localhost";
     private int mongoPort = 27019;
@@ -57,6 +60,7 @@ public class TempsMigrator {
     private Map<Integer, Queue<Double>> sensorReadingsQueues = new HashMap<>();
     private Map<Integer, Queue<Double>> sensorReadingsQueuesWithOutliers = new HashMap<>();
 
+    Logger logger = null;
 
     private final String QUERY_MONGO_GET_TEMPS = """
             { Timestamp: { $gte: %d }, Migrated: { $ne: '1' } }
@@ -117,6 +121,9 @@ public class TempsMigrator {
     }
 
     private void init() {
+        Thread.currentThread().setName("Main_Temps_Migration");
+        logger = new Logger("Main_Temps_Migration", Logger.TextColor.GREEN);
+        logger.setEnabled(LOGGER_ENABLED);
         try {
             ExperimentWatcher.setMigratorInstance(this);
             restartQueues();
@@ -137,9 +144,9 @@ public class TempsMigrator {
             tempsCollection = db.getCollection(mongoCollection);
             mariadbConnection = DriverManager.getConnection(sqlConnection, sqlusername, sqlPassword);
         } catch (SQLException e) {
-            System.out.println("Error connecting to MariaDB." + e);
+            logger.log("Error connecting to MariaDB." + e);
         } catch (IOException e) {
-            System.out.println("Error reading config.ini file." + e);
+            logger.log("Error reading config.ini file." + e);
         }
         currentTimestamp = System.currentTimeMillis();
     }
@@ -163,14 +170,14 @@ public class TempsMigrator {
             Document doc = null;
             while (cursor.hasNext()) {
                 doc = cursor.next();
-                System.out.println(doc);
+                logger.log(doc);
                 persistTemp(doc);
             }
             if (doc != null) {
                 currentTimestamp = System.currentTimeMillis();
             }
 
-            System.out.println("--- Sleeping " + (TEMPS_FREQUENCY / 1000) + " seconds... ---\n");
+            logger.log("--- Sleeping " + (TEMPS_FREQUENCY / 1000) + " seconds... ---\n");
             try {
                 //noinspection BusyWait
                 Thread.sleep(TEMPS_FREQUENCY);
@@ -201,7 +208,7 @@ public class TempsMigrator {
                 limitReached(doc);
                 sendTooManyOutliersAlert(doc);
             } catch (SQLException e) {
-                System.out.println("Error connecting to MariaDB." + e);
+                logger.log("Error connecting to MariaDB." + e);
             }
 
             Queue<Double> readingsQueue = sensorReadingsQueues.get(sensor);
@@ -260,22 +267,22 @@ public class TempsMigrator {
 
             if (generatedKeys.next()) {
                 long newId = generatedKeys.getLong(1);
-                //System.out.println("Generated ID: " + newId);
+                //logger.log("Generated ID: " + newId);
             } else {
                 throw new SQLException("Creating record failed, no ID obtained.");
             }
             statement.close();
         } catch (Exception e) {
-            System.out.println("Error Inserting in the database. " + e);
+            logger.log("Error Inserting in the database. " + e);
         }
     }
 
     private boolean validateReading(Document doc) {
         boolean validFormat = doc.containsKey("Leitura") &&
-                doc.containsKey("Sensor") &&
-                doc.containsKey("Hora") &&
-                doc.containsKey("Timestamp") &&
-                !isWrongTimestamp(doc);
+                              doc.containsKey("Sensor") &&
+                              doc.containsKey("Hora") &&
+                              doc.containsKey("Timestamp") &&
+                              !isWrongTimestamp(doc);
 
         try {
             doc.getDouble("Leitura");
@@ -319,13 +326,13 @@ public class TempsMigrator {
             statement.setString(6, message);
             statement.setInt(7, AlertSubType.TEMPERATURE_NEAR_LIMIT_MIN.getValue());
             statement.executeUpdate();
-            //System.out.println("Temperatura próxima do limite inferior");
+            //logger.log("Temperatura próxima do limite inferior");
         } else if (actualTemp >= maxLimit && actualTemp <= tempMax) {
             message = String.format(message, "superior", sensor);
             statement.setString(6, message);
             statement.setInt(7, AlertSubType.TEMPERATURE_NEAR_LIMIT_MAX.getValue());
             statement.executeUpdate();
-            //System.out.println("Temperatura próxima do limite superior");
+            //logger.log("Temperatura próxima do limite superior");
         }
         statement.close();
     }
@@ -356,13 +363,13 @@ public class TempsMigrator {
             statement.setString(6, message);
             statement.setInt(7, AlertSubType.TEMPERATURE_LIMIT_REACHED_MIN.getValue());
             statement.executeUpdate();
-            //System.out.println("Temperatura atingiu limite inferior");
+            //logger.log("Temperatura atingiu limite inferior");
         } else if (actualTemp >= tempMax) {
             message = String.format(message, "máximo", sensor);
             statement.setString(6, message);
             statement.setInt(7, AlertSubType.TEMPERATURE_LIMIT_REACHED_MAX.getValue());
             statement.executeUpdate();
-            //System.out.println("Temperatura atingiu limite superior");
+            //logger.log("Temperatura atingiu limite superior");
         }
 
         statement.close();
@@ -374,6 +381,17 @@ public class TempsMigrator {
             try {
                 EXPERIMENT_LOCK.lock();
                 isExperimentRunning = isRunning;
+            } finally {
+                EXPERIMENT_LOCK.unlock();
+            }
+        }
+    }
+
+    public static boolean getExperimentRunning() {
+        synchronized (EXPERIMENT_LOCK) {
+            try {
+                EXPERIMENT_LOCK.lock();
+                return isExperimentRunning;
             } finally {
                 EXPERIMENT_LOCK.unlock();
             }
@@ -394,10 +412,10 @@ public class TempsMigrator {
         Queue<Double> readingsQueue = sensorReadingsQueues.get(sensor);
         Queue<Double> readingsQueueWithOutliers = sensorReadingsQueuesWithOutliers.get(sensor);
 
-        System.out.println("The queue has " + readingsQueue.size() + " records.");
+        logger.log("The queue has " + readingsQueue.size() + " records.");
 
         if (readingsQueue.size() < numberOfRecords) {
-            System.out.println("Not enough records to start calculating.");
+            logger.log("Not enough records to start calculating.");
             return false;
         }
 
@@ -427,16 +445,16 @@ public class TempsMigrator {
         double min = regressedTemp - watcher.getOutlierTempMaxVar();
         double max = regressedTemp + watcher.getOutlierTempMaxVar();
 
-        System.out.println("MIN: " + min + " < Average:" + regressedTemp + " < MAX: " + max);
-        System.out.println("The current reading: " + currentReading);
+        logger.log("MIN: " + min + " < Average:" + regressedTemp + " < MAX: " + max);
+        logger.log("The current reading: " + currentReading);
 
         boolean isOutlier =
                 currentReading > regressedTemp + watcher.getOutlierTempMaxVar() ||
-                        currentReading < regressedTemp - watcher.getOutlierTempMaxVar();
+                currentReading < regressedTemp - watcher.getOutlierTempMaxVar();
 
         boolean isOutlierWithOutlier =
                 currentReading > outlierRegressedTemp + watcher.getOutlierTempMaxVar() ||
-                        currentReading < outlierRegressedTemp - watcher.getOutlierTempMaxVar();
+                currentReading < outlierRegressedTemp - watcher.getOutlierTempMaxVar();
 
         return isOutlier && isOutlierWithOutlier;
     }
@@ -453,13 +471,13 @@ public class TempsMigrator {
         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_COUNT_OUTLIERS_LAST_X_RECORDS);
         statement.setInt(1, sensor);
         statement.setInt(2, watcher.getOutlierRecordsNumber());
-        //System.out.println("Number of records " + watcher.getOutlierRecordsNumber());
+        //logger.log("Number of records " + watcher.getOutlierRecordsNumber());
         ResultSet resultSet = statement.executeQuery();
         int numberOfOutliers = 0;
 
         if (resultSet.next()) {
             numberOfOutliers = resultSet.getInt("outliers_count");
-            //System.out.println("Count of outliers " + numberOfOutliers);
+            //logger.log("Count of outliers " + numberOfOutliers);
         }
 
         String message = "Sensor de temperatura %d registou demasiados Outliers.";

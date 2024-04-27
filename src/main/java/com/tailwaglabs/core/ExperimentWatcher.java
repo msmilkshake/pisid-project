@@ -2,6 +2,7 @@ package com.tailwaglabs.core;
 
 import com.mongodb.MongoClient;
 import com.mongodb.client.MongoDatabase;
+import com.tailwaglabs.core.migrator.MovsMigrator;
 import com.tailwaglabs.core.migrator.TempsMigrator;
 
 import java.io.FileInputStream;
@@ -19,6 +20,8 @@ import java.util.TimerTask;
  * The TempsMNigrator class runs this thread when it starts.
  */
 public class ExperimentWatcher extends Thread {
+
+    private final boolean LOGGER_ENABLED = true;
 
     private static ExperimentWatcher watcher = new ExperimentWatcher();
     private static TempsMigrator migrator = null;
@@ -43,6 +46,8 @@ public class ExperimentWatcher extends Thread {
 
     private final int REFRESH_RATE = 1 * 1000; // 1 second
     private final int EXPERIMENT_MAX_DURATION = 10 * 60 * 1000; //MIN SEC MSEC
+
+    Logger logger = null;
 
     private Long idExperiment = null;
 
@@ -97,6 +102,8 @@ public class ExperimentWatcher extends Thread {
 
 
     private void init() {
+        logger = new Logger("Thread_Experiment_Watcher", Logger.TextColor.PURPLE);
+        logger.setEnabled(LOGGER_ENABLED);
         try {
             Properties p = new Properties();
             p.load(new FileInputStream("config.ini"));
@@ -107,9 +114,9 @@ public class ExperimentWatcher extends Thread {
 
             mariadbConnection = DriverManager.getConnection(sqlConnection, sqlusername, sqlPassword);
         } catch (SQLException e) {
-            System.out.println("Error connecting to MariaDB." + e);
+            logger.log("Error connecting to MariaDB." + e);
         } catch (IOException e) {
-            System.out.println("Error reading config.ini file." + e);
+            logger.log("Error reading config.ini file." + e);
         }
     }
 
@@ -128,22 +135,12 @@ public class ExperimentWatcher extends Thread {
                         .executeQuery(QUERY_SQL_GET_RUNNING_EXPERIMENT);
 
                 if (experimentResults.isBeforeFirst() && idExperiment == null) {
-                    experimentResults.next();
-                    idExperiment = experimentResults.getLong(1);
-                    setExperimentParameters();
-                    TempsMigrator.setExperimentRunning(true);
-                    experimentLimitTask = createExperimentLimitTask();
-                    startTimer();
-                    migrator.restartQueues();
-                    System.out.println("[" + Thread.currentThread().getName() + "] Experiment #" + idExperiment + " started.");
+                    startExperiment(experimentResults);
                 } else if (!experimentResults.isBeforeFirst() && idExperiment != null) {
-                    TempsMigrator.setExperimentRunning(false);
-                    stopTimer();
-                    System.out.println("[" + Thread.currentThread().getName() + "] Experiment #" + idExperiment + " ended.");
-                    idExperiment = null;
+                    stopExperiment();
                 }
 
-                System.out.println("[" + Thread.currentThread().getName() + "] Sleeping " + (REFRESH_RATE / 1000) + " seconds.");
+                logger.log("Sleeping " + (REFRESH_RATE / 1000) + " seconds.");
                 Thread.sleep(REFRESH_RATE);
             } catch (InterruptedException e) {
                 e.printStackTrace();
@@ -151,6 +148,25 @@ public class ExperimentWatcher extends Thread {
                 throw new RuntimeException(e);
             }
         }
+    }
+
+    private void startExperiment(ResultSet results) throws SQLException {
+        results.next();
+        idExperiment = results.getLong(1);
+        setExperimentParameters();
+        TempsMigrator.setExperimentRunning(true);
+        experimentLimitTask = createExperimentLimitTask();
+        startTimer();
+        migrator.restartQueues();
+        new MovsMigrator().start();
+        logger.log("Experiment #" + idExperiment + " started.");
+    }
+
+    private void stopExperiment() {
+        TempsMigrator.setExperimentRunning(false);
+        stopTimer();
+        logger.log("Experiment #" + idExperiment + " ended.");
+        idExperiment = null;
     }
 
     public Long getIdExperiment() {
@@ -192,6 +208,7 @@ public class ExperimentWatcher extends Thread {
     public int getMiceLimit() {
         return miceLimit;
     }
+
     public int getStartingMiceNumber() {
         return startingMiceNumber;
     }
@@ -226,7 +243,7 @@ public class ExperimentWatcher extends Thread {
         statement.setInt(5, AlertSubType.EXPERIMENT_DURATION.getValue());
         statement.executeUpdate();
         statement.close();
-        System.out.println("ALERT - EXPERIMENT RUNNING FOR 10 MINUTES!");
+        logger.log("ALERT - EXPERIMENT RUNNING FOR 10 MINUTES!");
     }
 
     public void alertMovementAbsence(long segundos) throws SQLException {

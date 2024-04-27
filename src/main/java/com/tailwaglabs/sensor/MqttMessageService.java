@@ -1,26 +1,23 @@
 package com.tailwaglabs.sensor;
 
-import com.mongodb.DB;
-import com.mongodb.DBCollection;
-import com.mongodb.MongoClient;
-import com.mongodb.MongoClientURI;
-import org.eclipse.paho.client.mqttv3.MqttClient;
-import org.eclipse.paho.client.mqttv3.MqttException;
+import com.mongodb.*;
+import com.mongodb.util.JSON;
+import com.tailwaglabs.core.Logger;
+import org.eclipse.paho.client.mqttv3.*;
 
-import javax.swing.*;
 import java.io.FileInputStream;
 import java.util.Properties;
 import java.util.Random;
 
-public class MqttMessageService {
+public class MqttMessageService implements MqttCallback {
 
     MqttClient mqttclient;
-    static MongoClient mongoClient;
+
     static DB db;
     static DBCollection mongocol;
     static String mongo_user = new String();
     static String mongo_password = new String();
-    static String mongoHost = new String();
+    static String mongo_address = new String();
     static String cloud_server = new String();
     static String cloud_temp_topic = new String();
     static String cloud_mov_topic = new String();
@@ -31,12 +28,17 @@ public class MqttMessageService {
     static String mongo_mov_collection = new String();
     static String mongo_authentication = new String();
 
+    public static final String CLIENT_ID = "CloudToMongo_" + new Random().nextInt(100000) + "_" + "g14";
 
-    public void start() {
+    static Logger logger = null;
+
+    public static void main(String[] args) {
+        Thread.currentThread().setName("MQTT_Message_Service");
+        logger = new Logger(Thread.currentThread().getName());
         try {
             Properties p = new Properties();
             p.load(new FileInputStream("config.ini"));
-            mongoHost = p.getProperty("localhost");
+            mongo_address = p.getProperty("mongo_address");
             mongo_user = p.getProperty("mongo_user");
             mongo_password = p.getProperty("mongo_password");
             mongo_replica = p.getProperty("mongo_replica");
@@ -50,18 +52,17 @@ public class MqttMessageService {
             mongo_mov_collection = p.getProperty("mongo_mov_collection");
         } catch (Exception e) {
             System.out.println("Error reading CloudToMongo.ini file " + e);
-            JOptionPane.showMessageDialog(null, "The CloudToMongo.inifile wasn't found.", "CloudToMongo", JOptionPane.ERROR_MESSAGE);
         }
+        new MqttMessageService().connecCloud();
+        new MqttMessageService().connectMongo();
     }
 
-    private void connectCloud() {
-        int i;
+    public void connecCloud() {
         try {
-            i = new Random().nextInt(100000);
-            mqttclient = new MqttClient(cloud_server, "CloudToMongo_"+String.valueOf(i)+"_"+"g14");
+            mqttclient = new MqttClient(cloud_server, CLIENT_ID);
             mqttclient.connect();
             System.out.println("Connected with success:" + mqttclient.isConnected());
-//            mqttclient.setCallback(this);
+            mqttclient.setCallback(this);
             mqttclient.subscribe(cloud_temp_topic);
             mqttclient.subscribe(cloud_mov_topic);
         } catch (MqttException e) {
@@ -69,24 +70,44 @@ public class MqttMessageService {
         }
     }
 
-    private void connectMongo() {
-        String mongoURI = new String();
-        mongoURI = "mongodb://";
+    public void connectMongo() {
+        String mongoURI = "mongodb://";
         if (mongo_authentication.equals("true")) mongoURI = mongoURI + mongo_user + ":" + mongo_password + "@";
-        mongoURI = mongoURI + mongoHost;
+        mongoURI = mongoURI + mongo_address;
         if (!mongo_replica.equals("false"))
-            if (mongo_authentication.equals("true")) mongoURI = mongoURI + "/?replicaSet=" + mongo_replica+"&authSource=admin";
+            if (mongo_authentication.equals("true"))
+                mongoURI = mongoURI + "/?replicaSet=" + mongo_replica + "&authSource=admin";
             else mongoURI = mongoURI + "/?replicaSet=" + mongo_replica;
-        else
-        if (mongo_authentication.equals("true")) mongoURI = mongoURI  + "/?authSource=admin";
-        MongoClient mongoClient = new MongoClient(new MongoClientURI(mongoURI));
-        db = mongoClient.getDB(mongo_database);
+        else if (mongo_authentication.equals("true")) mongoURI = mongoURI + "/?authSource=admin";
+
+        db = new MongoClient(new MongoClientURI(mongoURI)).getDB(mongo_database);
     }
 
-    // Handles all mqtt messages from the Cloud to Mongo
-    // Executes - ALWAYS 24/7 (manually)
-    public static void main(String[] args) {
-        Thread.currentThread().setName("Main_Mqtt_Subscriber");
-        
+    @Override
+    public void messageArrived(String topic, MqttMessage incomingMessage) throws Exception {
+        try {
+
+            DBObject document_json;
+            document_json = (DBObject) JSON.parse(incomingMessage.toString());
+            if (topic.equals(cloud_temp_topic)) {
+                mongocol = db.getCollection(mongo_temp_collection);
+            } else if (topic.equals(cloud_mov_topic)) {
+                mongocol = db.getCollection(mongo_mov_collection);
+            }
+            document_json.put("Timestamp", System.currentTimeMillis());
+            mongocol.insert(document_json);
+            logger.log(incomingMessage);
+
+        } catch (Exception e) {
+            logger.log(e);
+        }
+    }
+
+    @Override
+    public void connectionLost(Throwable cause) {
+    }
+
+    @Override
+    public void deliveryComplete(IMqttDeliveryToken token) {
     }
 }

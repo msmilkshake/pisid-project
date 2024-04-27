@@ -8,6 +8,7 @@ import com.mongodb.client.MongoDatabase;
 import com.tailwaglabs.core.AlertSubType;
 import com.tailwaglabs.core.AlertType;
 import com.tailwaglabs.core.ExperimentWatcher;
+import com.tailwaglabs.core.Logger;
 import org.bson.BsonDocument;
 import org.bson.Document;
 
@@ -21,7 +22,9 @@ import java.util.*;
  * Migrates and processes Movs sensor data: Mongo - MySQL
  * Executes - When an experiment is started (Django button starts this)
  */
-public class MovsMigrator {
+public class MovsMigrator extends Thread {
+
+    private final boolean LOGGER_ENABLED = true;
 
     private ExperimentWatcher watcher = ExperimentWatcher.getInstance();
 
@@ -43,9 +46,10 @@ public class MovsMigrator {
     private MongoCursor<Document> cursor;
     private Connection mariadbConnection;
     private boolean isBatchMigrated = true;
-    private final int MAX_NUMBER_OF_OUTLIERS = 3;
     Timer timer = null;
     TimerTask miceStoppedTask = null;
+
+    Logger logger = null;
 
     long movsTimestamp = System.currentTimeMillis();
 
@@ -76,7 +80,7 @@ public class MovsMigrator {
         timer = null;
         miceStoppedTask = null;
     }
-    private final int MOVS_FREQUENCY = 3 * 1000; // 3 seconds
+    private final int MOVS_FREQUENCY = 1 * 1000; // 1 seconds
 
     private HashMap<Integer, Integer> rooms_population = new HashMap<>();
 
@@ -89,16 +93,19 @@ public class MovsMigrator {
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """;
 
-    private void run() {
+    public void run() {
         init();
         try {
             migrationLoop();
         } catch (SQLException e) {
-            System.out.println("Error connecting to MariaDB." + e);
+            logger.log("Error connecting to MariaDB." + e);
         }
     }
 
     private void init() {
+        Thread.currentThread().setName("Main_Movs_Migration");
+        logger = new Logger("Main_Movs_Migration", Logger.TextColor.CYAN);
+        logger.setEnabled(LOGGER_ENABLED);
         try {
             Properties p = new Properties();
             p.load(new FileInputStream("config.ini"));
@@ -117,9 +124,9 @@ public class MovsMigrator {
             movsCollection = db.getCollection(mongoCollection);
             mariadbConnection = DriverManager.getConnection(sqlConnection, sqlusername, sqlPassword);
         } catch (SQLException e) {
-            System.out.println("Error connecting to MariaDB." + e);
+            logger.log("Error connecting to MariaDB." + e);
         } catch (IOException e) {
-            System.out.println("Error reading config.ini file." + e);
+            logger.log("Error reading config.ini file." + e);
         }
         currentTimestamp = System.currentTimeMillis();
     }
@@ -132,10 +139,11 @@ public class MovsMigrator {
         for (int i = 2; i <= 10; i++) { // remaining 9 rooms with 0 mice
             rooms_population.put(i, 0);
         }
-//        miceStoppedTask = createMiceStoppedTask();
+
         startTimer();
         long initTime = System.currentTimeMillis(); //REMOVE
-        while (true) {
+
+        while (TempsMigrator.getExperimentRunning()) {
             String query = String.format(QUERY_MONGO_GET_MOVS, movsTimestamp);
             FindIterable<Document> results = movsCollection.find(BsonDocument.parse(query));
             Document doc = null;
@@ -158,7 +166,7 @@ public class MovsMigrator {
                     statement.setInt(7, AlertSubType.ILLEGAL_MOVEMENT.getValue());
                     statement.executeUpdate();
                     statement.close();
-                    System.out.println("ALERT: invalid movement!"); // REMOVE
+                    logger.log("ALERT: invalid movement!"); // REMOVE
                 } else {  // movement can be performed
                     initTime = System.currentTimeMillis(); // REMOVE
                     stopTimer();
@@ -179,23 +187,18 @@ public class MovsMigrator {
                         statement.setInt(7, AlertSubType.MAX_MICE_REACHED.getValue());
                         statement.executeUpdate();
                         statement.close();
-                        System.out.println("ALERT TOO MANY MICE in room " + to_room); // REMOVE
+                        logger.log("ALERT TOO MANY MICE in room " + to_room); // REMOVE
                     }
                 }
-                System.out.println("Mice in rooms: " + rooms_population);
+                logger.log("Mice in rooms: " + rooms_population);
             }
             if (doc != null) {
                 movsTimestamp = System.currentTimeMillis();
             }
 //            long elapsedTime = (System.currentTimeMillis() - initTime) / 1000; // REMOVE
-//            System.out.println(elapsedTime + " sec"); // REMOVE
+//            logger.log(elapsedTime + " sec"); // REMOVE
 
-// REMOVE BELLOW
-//            if (elapsedTime > watcher.getSecondsWithoutMovement()) {
-//                watcher.alertMovementAbsence(watcher.getSecondsWithoutMovement());
-//            }
-
-//            System.out.println("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); // REINSTATE
+            logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); // REINSTATE
             try {
                 //noinspection BusyWait
                 Thread.sleep(MOVS_FREQUENCY);
@@ -220,13 +223,13 @@ public class MovsMigrator {
             s.executeUpdate(sqlQuery);
             s.close();
         } catch (Exception e) {
-            System.out.println("Error Inserting in the database . " + e);
-            System.out.println(sqlQuery);
+            logger.log("Error Inserting in the database . " + e);
+            logger.log(sqlQuery);
         }
     }
 
-    public static void main(String[] args) throws SQLException {
-        Thread.currentThread().setName("Main_Movs_Migration");
-        new MovsMigrator().run();
-    }
+//    public static void main(String[] args) throws SQLException {
+//        Thread.currentThread().setName("Main_Movs_Migration");
+//        new MovsMigrator().run();
+//    }
 }
