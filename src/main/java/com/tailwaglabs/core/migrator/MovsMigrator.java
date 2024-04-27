@@ -116,13 +116,9 @@ public class MovsMigrator {
             Document doc = null;
             Iterator<Document> cursor = results.iterator();
             while (cursor.hasNext()) {
-
-//                movementAbsence(doc); // TODO
-
                 doc = cursor.next();
                 int from_room = doc.getInteger("SalaOrigem");
                 int to_room = doc.getInteger("SalaDestino");
-
                 if (from_room == to_room || topology[from_room][to_room] == 0 || rooms_population.get(from_room) == 0) {
                     String message = "Movimento ilegal detetado entre a Sala %d e a sala %d.";
                     message = String.format(message, from_room, to_room);
@@ -137,7 +133,6 @@ public class MovsMigrator {
                     statement.executeUpdate();
                     statement.close();
                     System.out.println("ALERT: invalid movement!"); // REMOVE
-
                 } else {  // movement can be performed
                     initTime = System.currentTimeMillis();
                     rooms_population.put(to_room, rooms_population.get(to_room) + 1);
@@ -166,6 +161,9 @@ public class MovsMigrator {
             }
             long elapsedTime = (System.currentTimeMillis() - initTime) / 1000;
             System.out.println(elapsedTime + " sec");
+            if (elapsedTime > watcher.getSecondsWithoutMovement()) {
+                watcher.alertMovementAbsence(watcher.getSecondsWithoutMovement());
+            }
 //            System.out.println("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); // REINSTATE
             try {
                 //noinspection BusyWait
@@ -195,11 +193,6 @@ public class MovsMigrator {
             System.out.println(sqlQuery);
         }
     }
-
-    public void movementAbsence(Document doc) {
-        // TODO
-    }
-
 
     public static void main(String[] args) throws SQLException {
         Thread.currentThread().setName("Main_Movs_Migration");

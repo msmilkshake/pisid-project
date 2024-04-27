@@ -52,11 +52,13 @@ public class ExperimentWatcher extends Thread {
     private int outlierRecordsNumber;
     private int miceLimit;
     private int startingMiceNumber;
+    private int secondsWithoutMovement;
 
     private final String QUERY_SQL_GET_TEMP_MIN_MAX = """ 
             SELECT parametrosexperiencia.TemperaturaMaxima, parametrosexperiencia.TemperaturaMinima,
             parametrosexperiencia.OutlierVariacaoTempMax, parametrosexperiencia.OutlierLeiturasNumero,
-            parametrosexperiencia.LimiteRatosSala, parametrosexperiencia.NumeroRatosInicial
+            parametrosexperiencia.LimiteRatosSala, parametrosexperiencia.NumeroRatosInicial,
+            parametrosexperiencia.SegundosSemMovimento
             FROM experiencia
             JOIN parametrosexperiencia ON experiencia.IDParametros = parametrosexperiencia.IDParametros
             WHERE experiencia.IDExperiencia = ?;
@@ -167,6 +169,7 @@ public class ExperimentWatcher extends Thread {
             outlierRecordsNumber = resultSet.getInt("OutlierLeiturasNumero");
             miceLimit = resultSet.getInt("LimiteRatosSala");
             startingMiceNumber = resultSet.getInt("NumeroRatosInicial");
+            secondsWithoutMovement = resultSet.getInt("SegundosSemMovimento");
         }
     }
 
@@ -191,6 +194,10 @@ public class ExperimentWatcher extends Thread {
     }
     public int getStartingMiceNumber() {
         return startingMiceNumber;
+    }
+
+    public int getSecondsWithoutMovement() {
+        return secondsWithoutMovement;
     }
 
     // Call this when an experiment starts
@@ -222,8 +229,8 @@ public class ExperimentWatcher extends Thread {
         System.out.println("ALERT - EXPERIMENT RUNNING FOR 10 MINUTES!");
     }
 
-    public void alertMovementAbsence() throws SQLException {
-        String message = "Ratos parados há mais de %d segundos."; // TODO ir buscar DB
+    public void alertMovementAbsence(long segundos) throws SQLException {
+        String message = String.format("Ratos parados há mais de %d segundos.", segundos);
         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
         statement.setLong(1, watcher.getIdExperiment());
         statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
@@ -232,7 +239,6 @@ public class ExperimentWatcher extends Thread {
         statement.setInt(5, AlertSubType.MICE_MOVEMENT_ABSENCE.getValue());
         statement.executeUpdate();
         statement.close();
-        System.out.println("ALERT - MICE STOPED FOR %d SECONDS!"); // TODO ir buscar variável
+        System.out.printf("ALERT - MICE STOPPED FOR %d SECONDS!\n", segundos); // TODO ir buscar variável
     }
-
 }
