@@ -239,6 +239,6 @@ public class ExperimentWatcher extends Thread {
         statement.setInt(5, AlertSubType.MICE_MOVEMENT_ABSENCE.getValue());
         statement.executeUpdate();
         statement.close();
-        System.out.printf("ALERT - MICE STOPPED FOR %d SECONDS!\n", segundos); // TODO ir buscar variável
+        System.out.printf("ALERT - MICE STOPPED FOR %d SECONDS!\n", segundos);
     }
 }

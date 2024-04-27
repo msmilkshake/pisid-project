@@ -15,9 +15,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.sql.*;
 import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Properties;
+import java.util.*;
 
 /**
  * Migrates and processes Movs sensor data: Mongo - MySQL
@@ -46,12 +44,38 @@ public class MovsMigrator {
     private Connection mariadbConnection;
     private boolean isBatchMigrated = true;
     private final int MAX_NUMBER_OF_OUTLIERS = 3;
+    Timer timer = null;
+    TimerTask miceStoppedTask = null;
 
     long movsTimestamp = System.currentTimeMillis();
-    String sql_database_connection_to = "";
-    String sql_database_password_to = "";
-    String sql_database_user_to = "";
 
+    private TimerTask createMiceStoppedTask() {
+        return new TimerTask() {
+            @Override
+            public void run() {
+                try {
+                    watcher.alertMovementAbsence(watcher.getSecondsWithoutMovement());
+                } catch (SQLException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        };
+    }
+
+    private void startTimer() {
+        miceStoppedTask = createMiceStoppedTask();
+        timer = new Timer();
+        long delay = watcher.getSecondsWithoutMovement() * 1000L;
+        timer.schedule(miceStoppedTask, delay);
+    }
+
+    private void stopTimer() {
+        miceStoppedTask.cancel();
+        timer.cancel();
+        timer.purge();
+        timer = null;
+        miceStoppedTask = null;
+    }
     private final int MOVS_FREQUENCY = 3 * 1000; // 3 seconds
 
     private HashMap<Integer, Integer> rooms_population = new HashMap<>();
@@ -108,13 +132,15 @@ public class MovsMigrator {
         for (int i = 2; i <= 10; i++) { // remaining 9 rooms with 0 mice
             rooms_population.put(i, 0);
         }
-        long initTime = System.currentTimeMillis();
-        long accTimer = 0;
+//        miceStoppedTask = createMiceStoppedTask();
+        startTimer();
+        long initTime = System.currentTimeMillis(); //REMOVE
         while (true) {
             String query = String.format(QUERY_MONGO_GET_MOVS, movsTimestamp);
             FindIterable<Document> results = movsCollection.find(BsonDocument.parse(query));
             Document doc = null;
             Iterator<Document> cursor = results.iterator();
+
             while (cursor.hasNext()) {
                 doc = cursor.next();
                 int from_room = doc.getInteger("SalaOrigem");
@@ -134,18 +160,20 @@ public class MovsMigrator {
                     statement.close();
                     System.out.println("ALERT: invalid movement!"); // REMOVE
                 } else {  // movement can be performed
-                    initTime = System.currentTimeMillis();
+                    initTime = System.currentTimeMillis(); // REMOVE
+                    stopTimer();
+                    startTimer();
                     rooms_population.put(to_room, rooms_population.get(to_room) + 1);
                     rooms_population.put(from_room, rooms_population.get(from_room) - 1);
                     persistMov(doc, System.currentTimeMillis(), watcher.getIdExperiment());
                     if (rooms_population.get(to_room) >= miceLimit) { // Alert if mice number exceeded limit
-                        String message = "Excesso de ratos na Sala %d.";
+                        String message = "Excesso de ratos na Sala %d."; // TODO WRITE Sala
                         message = String.format(message, to_room);
                         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
                         statement.setLong(1, watcher.getIdExperiment());
                         statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
-                        statement.setInt(3, from_room);
-                        statement.setInt(4, to_room);
+                        statement.setInt(3, from_room); // TODO REMOVER
+                        statement.setInt(4, to_room); // TODO REMOVER
                         statement.setInt(5, AlertType.AVISO.getValue());
                         statement.setString(6, message);
                         statement.setInt(7, AlertSubType.MAX_MICE_REACHED.getValue());
@@ -159,11 +187,14 @@ public class MovsMigrator {
             if (doc != null) {
                 movsTimestamp = System.currentTimeMillis();
             }
-            long elapsedTime = (System.currentTimeMillis() - initTime) / 1000;
-            System.out.println(elapsedTime + " sec");
-            if (elapsedTime > watcher.getSecondsWithoutMovement()) {
-                watcher.alertMovementAbsence(watcher.getSecondsWithoutMovement());
-            }
+//            long elapsedTime = (System.currentTimeMillis() - initTime) / 1000; // REMOVE
+//            System.out.println(elapsedTime + " sec"); // REMOVE
+
+// REMOVE BELLOW
+//            if (elapsedTime > watcher.getSecondsWithoutMovement()) {
+//                watcher.alertMovementAbsence(watcher.getSecondsWithoutMovement());
+//            }
+
 //            System.out.println("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); // REINSTATE
             try {
                 //noinspection BusyWait
