@@ -221,4 +221,18 @@ public class ExperimentWatcher extends Thread {
         statement.close();
         System.out.println("ALERT - EXPERIMENT RUNNING FOR 10 MINUTES!");
     }
+
+    public void alertMovementAbsence() throws SQLException {
+        String message = "Ratos parados há mais de %d segundos."; // TODO ir buscar DB
+        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+        statement.setLong(1, watcher.getIdExperiment());
+        statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+        statement.setInt(3, AlertType.INFORMATIVO.getValue());
+        statement.setString(4, message);
+        statement.setInt(5, AlertSubType.MICE_MOVEMENT_ABSENCE.getValue());
+        statement.executeUpdate();
+        statement.close();
+        System.out.println("ALERT - MICE STOPED FOR %d SECONDS!"); // TODO ir buscar variável
+    }
+
 }

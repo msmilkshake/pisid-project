@@ -104,11 +104,12 @@ public class MovsMigrator {
         int[][] topology = new ConnectToMysql().getTopology(); // get labyrinth topology from relational
         int miceLimit = watcher.getMiceLimit();
         ConnectToMysql.show_matrix(topology); // show labyrinth topology retrieved from relational
-        System.out.println("DEB: " + watcher.getStartingMiceNumber());
         rooms_population.put(1, watcher.getStartingMiceNumber()); // set initial mice number in 1st room
         for (int i = 2; i <= 10; i++) { // remaining 9 rooms with 0 mice
             rooms_population.put(i, 0);
         }
+        long initTime = System.currentTimeMillis();
+        long accTimer = 0;
         while (true) {
             String query = String.format(QUERY_MONGO_GET_MOVS, movsTimestamp);
             FindIterable<Document> results = movsCollection.find(BsonDocument.parse(query));
@@ -116,7 +117,7 @@ public class MovsMigrator {
             Iterator<Document> cursor = results.iterator();
             while (cursor.hasNext()) {
 
-                movementAbsence(doc); // TODO
+//                movementAbsence(doc); // TODO
 
                 doc = cursor.next();
                 int from_room = doc.getInteger("SalaOrigem");
@@ -138,6 +139,7 @@ public class MovsMigrator {
                     System.out.println("ALERT: invalid movement!"); // REMOVE
 
                 } else {  // movement can be performed
+                    initTime = System.currentTimeMillis();
                     rooms_population.put(to_room, rooms_population.get(to_room) + 1);
                     rooms_population.put(from_room, rooms_population.get(from_room) - 1);
                     persistMov(doc, System.currentTimeMillis(), watcher.getIdExperiment());
@@ -162,6 +164,8 @@ public class MovsMigrator {
             if (doc != null) {
                 movsTimestamp = System.currentTimeMillis();
             }
+            long elapsedTime = (System.currentTimeMillis() - initTime) / 1000;
+            System.out.println(elapsedTime + " sec");
 //            System.out.println("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); // REINSTATE
             try {
                 //noinspection BusyWait
@@ -195,6 +199,7 @@ public class MovsMigrator {
     public void movementAbsence(Document doc) {
         // TODO
     }
+
 
     public static void main(String[] args) throws SQLException {
         Thread.currentThread().setName("Main_Movs_Migration");
