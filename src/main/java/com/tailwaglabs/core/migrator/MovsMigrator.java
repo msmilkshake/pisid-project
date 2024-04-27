@@ -103,21 +103,20 @@ public class MovsMigrator {
 
     private void migrationLoop() throws SQLException {
         int[][] topology = new ConnectToMysql().getTopology(); // get labyrinth topology from relational
-        System.out.println("Labyrinth topology:");
-        ConnectToMysql.show_matrix(topology); // show labyrinth topology retrieved from relational
-        rooms_population.put(1, 20); // 20 mice on room 1 at startup for testing purposes
+        int miceLimit = watcher.getMiceLimit();
+//        ConnectToMysql.show_matrix(topology); // show labyrinth topology retrieved from relational
+        rooms_population.put(1, 20); // 20 mice on room 1 at startup for testing purposes // TODO get initial mice nb
         for (int i = 2 ; i <= 10; i++) { // remaining 9 rooms with 0 mice
             rooms_population.put(i, 0);
         }
         while (true) {
-            String testQ = "{ Timestamp: { $gte: " + movsTimestamp + " } }";
-            FindIterable<Document> results = movsCollection.find(BsonDocument.parse(testQ));
+            String query = String.format(QUERY_MONGO_GET_MOVS, movsTimestamp);
+            FindIterable<Document> results = movsCollection.find(BsonDocument.parse(query));
             Document doc = null;
             Iterator<Document> cursor = results.iterator();
             while (cursor.hasNext()) {
 
-                tooManyMiceInTheRoom(doc);
-                movementAbsence(doc);
+                movementAbsence(doc); // TODO
 
                 doc = cursor.next();
                 int from_room = doc.getInteger("SalaOrigem");
@@ -136,15 +135,29 @@ public class MovsMigrator {
                     statement.setInt(7, AlertSubType.ILLEGAL_MOVEMENT.getValue());
                     statement.executeUpdate();
                     statement.close();
-                    System.out.println("ALERT: movement to SAME ROOM - invalid movement!"); // REMOVE
+                    System.out.println("ALERT: invalid movement!"); // REMOVE
 
                 } else {  // movement can be performed
                     rooms_population.put(to_room, rooms_population.get(to_room) + 1);
                     rooms_population.put(from_room, rooms_population.get(from_room) - 1);
                     persistMov(doc, System.currentTimeMillis(), watcher.getIdExperiment());
+                    if (rooms_population.get(to_room) >= miceLimit) { // Alert if mice number exceeded limit
+                        String message = "Excesso de ratos na Sala %d.";
+                        message = String.format(message, to_room);
+                        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+                        statement.setLong(1, watcher.getIdExperiment());
+                        statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+                        statement.setInt(3, from_room);
+                        statement.setInt(4, to_room);
+                        statement.setInt(5, AlertType.AVISO.getValue());
+                        statement.setString(6, message);
+                        statement.setInt(7, AlertSubType.MAX_MICE_REACHED.getValue());
+                        statement.executeUpdate();
+                        statement.close();
+                        System.out.println("ALERT TOO MANY MICE in room " + to_room); // REMOVE
+                    }
                 }
                 System.out.println("Mice in rooms: " + rooms_population);
-
             }
             if (doc != null) {
                 movsTimestamp = System.currentTimeMillis();
@@ -171,23 +184,12 @@ public class MovsMigrator {
         );
         try {
             Statement s = mariadbConnection.createStatement();
-            System.out.println("Q: " + sqlQuery);
-            int result = s.executeUpdate(sqlQuery);
+            s.executeUpdate(sqlQuery);
             s.close();
         } catch (Exception e) {
             System.out.println("Error Inserting in the database . " + e);
             System.out.println(sqlQuery);
         }
-    }
-
-
-    public void tooManyMiceInTheRoom(Document doc) {
-
-        int miceLimit = watcher.getMiceLimit();
-
-        // TODO
-        // compare with the hashMap
-
     }
 
     public void movementAbsence(Document doc) {
@@ -196,12 +198,6 @@ public class MovsMigrator {
 
     public static void main(String[] args) throws SQLException {
         Thread.currentThread().setName("Main_Movs_Migration");
-
-        MovsMigrator movsMigrator = new MovsMigrator();
-        movsMigrator.run();
-//        movsMigrator.migrationLoop();
-//        new MovsMigrator().migrationLoop();
-
+        new MovsMigrator().run();
     }
-
 }
