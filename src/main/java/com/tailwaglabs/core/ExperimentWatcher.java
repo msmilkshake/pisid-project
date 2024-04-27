@@ -42,7 +42,7 @@ public class ExperimentWatcher extends Thread {
     private Connection mariadbConnection;
 
     private final int REFRESH_RATE = 1 * 1000; // 1 second
-    private final int EXPERIMENT_MAX_DURATION = 1 * 15 * 1000;
+    private final int EXPERIMENT_MAX_DURATION = 10 * 60 * 1000; //MIN SEC MSEC
 
     private Long idExperiment = null;
 
@@ -67,7 +67,7 @@ public class ExperimentWatcher extends Thread {
             WHERE IDEstado = 2;
             """;
 
-    private final String QUERY_SQL_INSERT_TEMP_ALERT = """ 
+    private final String QUERY_SQL_INSERT_ALERT = """ 
             INSERT INTO alerta(IDExperiencia, Hora, TipoAlerta, Mensagem, SubTipoAlerta)
             VALUES (?, ?, ?, ?, ?)
             """;
@@ -212,7 +212,7 @@ public class ExperimentWatcher extends Thread {
     public void experimentRunningLimit() throws SQLException {
 
         String message = "Experiência a decorrer há mais de 10 minutos.";
-        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
         statement.setLong(1, watcher.getIdExperiment());
         statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
         statement.setInt(3, AlertType.INFORMATIVO.getValue());
@@ -221,6 +221,6 @@ public class ExperimentWatcher extends Thread {
         statement.executeUpdate();
         statement.close();
 
-        System.out.println("ALERT - EXPERIMENT RUNNING FOR 15 SECONDS!!");
+        System.out.println("ALERT - EXPERIMENT RUNNING FOR 10 MINUTES!");
     }
 }

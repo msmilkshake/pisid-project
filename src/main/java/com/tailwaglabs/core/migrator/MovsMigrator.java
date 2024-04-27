@@ -1,6 +1,5 @@
 package com.tailwaglabs.core.migrator;
 
-import com.mongodb.Mongo;
 import com.mongodb.MongoClient;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
@@ -61,7 +60,7 @@ public class MovsMigrator {
             { Timestamp: { $gte: %d }, Migrated: { $ne: '1' } }
             """;
 
-    private final String QUERY_SQL_INSERT_TEMP_ALERT = """ 
+    private final String QUERY_SQL_INSERT_ALERT = """ 
             INSERT INTO alerta(IDExperiencia, Hora, SalaOrigem, SalaDestino, TipoAlerta, Mensagem, SubTipoAlerta)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """;
@@ -99,7 +98,6 @@ public class MovsMigrator {
         } catch (IOException e) {
             System.out.println("Error reading config.ini file." + e);
         }
-        connectToDatabases();
         currentTimestamp = System.currentTimeMillis();
     }
 
@@ -126,11 +124,9 @@ public class MovsMigrator {
                 int to_room = doc.getInteger("SalaDestino");
 
                 if (from_room == to_room || topology[from_room][to_room] == 0 || rooms_population.get(from_room) == 0) {
-
                     String message = "Movimento ilegal detetado entre a Sala %d e a sala %d.";
                     message = String.format(message, from_room, to_room);
-
-                    PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+                    PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
                     statement.setLong(1, watcher.getIdExperiment());
                     statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
                     statement.setInt(3, from_room);
@@ -139,10 +135,8 @@ public class MovsMigrator {
                     statement.setString(6, message);
                     statement.setInt(7, AlertSubType.ILLEGAL_MOVEMENT.getValue());
                     statement.executeUpdate();
-
                     statement.close();
-
-                    System.out.println("ALERT: movement to SAME ROOM - invalid movement!");
+                    System.out.println("ALERT: movement to SAME ROOM - invalid movement!"); // REMOVE
 
                 } else {  // movement can be performed
                     rooms_population.put(to_room, rooms_population.get(to_room) + 1);
@@ -177,6 +171,7 @@ public class MovsMigrator {
         );
         try {
             Statement s = mariadbConnection.createStatement();
+            System.out.println("Q: " + sqlQuery);
             int result = s.executeUpdate(sqlQuery);
             s.close();
         } catch (Exception e) {
@@ -185,14 +180,6 @@ public class MovsMigrator {
         }
     }
 
-    public void connectToDatabases() {
-        try {
-            Class.forName("org.mariadb.jdbc.Driver");
-            mariadbConnection = DriverManager.getConnection(sql_database_connection_to, sql_database_user_to, sql_database_password_to);
-        } catch (Exception e) {
-            System.out.println("Mysql Server Destination down, unable to make the connection. " + e);
-        }
-    }
 
     public void tooManyMiceInTheRoom(Document doc) {
 
@@ -212,7 +199,7 @@ public class MovsMigrator {
 
         MovsMigrator movsMigrator = new MovsMigrator();
         movsMigrator.run();
-        movsMigrator.migrationLoop();
+//        movsMigrator.migrationLoop();
 //        new MovsMigrator().migrationLoop();
 
     }
