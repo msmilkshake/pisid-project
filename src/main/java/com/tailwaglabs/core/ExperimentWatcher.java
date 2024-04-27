@@ -51,11 +51,12 @@ public class ExperimentWatcher extends Thread {
     private double outlierTempMaxVar;
     private int outlierRecordsNumber;
     private int miceLimit;
+    private int startingMiceNumber;
 
     private final String QUERY_SQL_GET_TEMP_MIN_MAX = """ 
             SELECT parametrosexperiencia.TemperaturaMaxima, parametrosexperiencia.TemperaturaMinima,
             parametrosexperiencia.OutlierVariacaoTempMax, parametrosexperiencia.OutlierLeiturasNumero,
-            parametrosexperiencia.LimiteRatosSala
+            parametrosexperiencia.LimiteRatosSala, parametrosexperiencia.NumeroRatosInicial
             FROM experiencia
             JOIN parametrosexperiencia ON experiencia.IDParametros = parametrosexperiencia.IDParametros
             WHERE experiencia.IDExperiencia = ?;
@@ -108,7 +109,6 @@ public class ExperimentWatcher extends Thread {
         } catch (IOException e) {
             System.out.println("Error reading config.ini file." + e);
         }
-
     }
 
 
@@ -141,7 +141,6 @@ public class ExperimentWatcher extends Thread {
                     idExperiment = null;
                 }
 
-
                 System.out.println("[" + Thread.currentThread().getName() + "] Sleeping " + (REFRESH_RATE / 1000) + " seconds.");
                 Thread.sleep(REFRESH_RATE);
             } catch (InterruptedException e) {
@@ -158,20 +157,16 @@ public class ExperimentWatcher extends Thread {
 
     public void setExperimentParameters() throws SQLException {
         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_TEMP_MIN_MAX);
-        idExperiment = 1L; // FOR TESTING PURPOSES -> REMOVE
         statement.setLong(1, idExperiment);
         ResultSet resultSet = statement.executeQuery();
 
         if (resultSet.next()) {
             experimentMinTemp = resultSet.getDouble("TemperaturaMinima");
-
             experimentMaxTemp = resultSet.getDouble("TemperaturaMaxima");
-
             outlierTempMaxVar = resultSet.getDouble("OutlierVariacaoTempMax");
             outlierRecordsNumber = resultSet.getInt("OutlierLeiturasNumero");
-
             miceLimit = resultSet.getInt("LimiteRatosSala");
-
+            startingMiceNumber = resultSet.getInt("NumeroRatosInicial");
         }
     }
 
@@ -193,6 +188,9 @@ public class ExperimentWatcher extends Thread {
 
     public int getMiceLimit() {
         return miceLimit;
+    }
+    public int getStartingMiceNumber() {
+        return startingMiceNumber;
     }
 
     // Call this when an experiment starts
@@ -221,7 +219,6 @@ public class ExperimentWatcher extends Thread {
         statement.setInt(5, AlertSubType.EXPERIMENT_DURATION.getValue());
         statement.executeUpdate();
         statement.close();
-
         System.out.println("ALERT - EXPERIMENT RUNNING FOR 10 MINUTES!");
     }
 }

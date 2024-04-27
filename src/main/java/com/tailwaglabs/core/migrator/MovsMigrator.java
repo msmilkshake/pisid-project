@@ -72,7 +72,6 @@ public class MovsMigrator {
         } catch (SQLException e) {
             System.out.println("Error connecting to MariaDB." + e);
         }
-
     }
 
     private void init() {
@@ -104,9 +103,10 @@ public class MovsMigrator {
     private void migrationLoop() throws SQLException {
         int[][] topology = new ConnectToMysql().getTopology(); // get labyrinth topology from relational
         int miceLimit = watcher.getMiceLimit();
-//        ConnectToMysql.show_matrix(topology); // show labyrinth topology retrieved from relational
-        rooms_population.put(1, 20); // 20 mice on room 1 at startup for testing purposes // TODO get initial mice nb
-        for (int i = 2 ; i <= 10; i++) { // remaining 9 rooms with 0 mice
+        ConnectToMysql.show_matrix(topology); // show labyrinth topology retrieved from relational
+        System.out.println("DEB: " + watcher.getStartingMiceNumber());
+        rooms_population.put(1, watcher.getStartingMiceNumber()); // set initial mice number in 1st room
+        for (int i = 2; i <= 10; i++) { // remaining 9 rooms with 0 mice
             rooms_population.put(i, 0);
         }
         while (true) {
