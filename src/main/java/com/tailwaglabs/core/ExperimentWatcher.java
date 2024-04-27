@@ -158,6 +158,7 @@ public class ExperimentWatcher extends Thread {
 
     public void setExperimentParameters() throws SQLException {
         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_TEMP_MIN_MAX);
+        idExperiment = 12L; // FOR TESTING PURPOSES -> REMOVE
         statement.setLong(1, idExperiment);
         ResultSet resultSet = statement.executeQuery();
 

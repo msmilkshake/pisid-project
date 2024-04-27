@@ -86,7 +86,7 @@ public class CloudToMongo implements MqttCallback {
             mqttclient.connect();
             System.out.println("Connected with success:" + mqttclient.isConnected());
             mqttclient.setCallback(this);
-//            mqttclient.subscribe(cloud_temp_topic); // REINSTATE
+            mqttclient.subscribe(cloud_temp_topic); // REINSTATE
             mqttclient.subscribe(cloud_mov_topic);
         } catch (MqttException e) {
             e.printStackTrace();
