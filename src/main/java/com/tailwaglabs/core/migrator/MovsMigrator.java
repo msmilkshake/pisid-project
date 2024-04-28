@@ -194,7 +194,7 @@ public class MovsMigrator extends Thread {
             if (doc != null) {
                 movsTimestamp = System.currentTimeMillis();
             }
-//            logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); // REINSTATE
+            logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
             try {
                 Thread.sleep(MOVS_FREQUENCY);
             } catch (InterruptedException e) {

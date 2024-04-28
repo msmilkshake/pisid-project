@@ -179,7 +179,7 @@ public class TempsMigrator {
                 currentTimestamp = System.currentTimeMillis();
             }
 
-//            logger.log("--- Sleeping " + (TEMPS_FREQUENCY / 1000) + " seconds... ---\n"); // REINSTATE
+            logger.log("--- Sleeping " + (TEMPS_FREQUENCY / 1000) + " seconds... ---\n");
             try {
                 //noinspection BusyWait
                 Thread.sleep(TEMPS_FREQUENCY);

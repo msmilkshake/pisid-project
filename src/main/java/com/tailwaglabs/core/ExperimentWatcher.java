@@ -139,7 +139,7 @@ public class ExperimentWatcher extends Thread {
                     stopExperiment();
                 }
 
-//                logger.log("Sleeping " + (REFRESH_RATE / 1000) + " seconds."); // REINSTATE
+                logger.log("Sleeping " + (REFRESH_RATE / 1000) + " seconds.");
                 Thread.sleep(REFRESH_RATE);
             } catch (InterruptedException e) {
                 e.printStackTrace();
