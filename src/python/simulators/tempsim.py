@@ -109,10 +109,11 @@ def run_mqtt():
             time.sleep(1)
         except Exception:
             print("Error sendMqtt")
-            pass
+            clientMqttMovements.disconnect()
+            clientMqttMovements.loop_stop()
 
 
-mqtt_thread = threading.Thread(target=run_mqtt)
+mqtt_thread = threading.Thread(target=run_mqtt, daemon=True)
 mqtt_thread.start()
 
 
@@ -229,20 +230,4 @@ position_right = int(screen_width / 2 - window_width / 2)
 root.geometry(f"{window_width}x{window_height}+{position_right}+{position_top}")
 root.mainloop()
 
-mqtt_thread = threading.Thread(target=run_mqtt)
-mqtt_thread.start()
-
-
-# input_queue = Queue()
-#
-#
-# def get_user_input(input_queue):
-#     while True:
-#         user_input = input()
-#         input_queue.put(user_input)
-#
-#
-# input_thread = threading.Thread(target=get_user_input, args=(input_queue,))
-# input_thread.daemon = True
-# input_thread.start()
 
