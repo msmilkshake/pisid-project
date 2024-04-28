@@ -59,7 +59,7 @@ public class ExperimentWatcher extends Thread {
     private int startingMiceNumber;
     private int secondsWithoutMovement;
 
-    private final String QUERY_SQL_GET_TEMP_MIN_MAX = """ 
+    private final String QUERY_GET_EXPERIENCE_PARAMETERS = """ 
             SELECT parametrosexperiencia.TemperaturaMaxima, parametrosexperiencia.TemperaturaMinima,
             parametrosexperiencia.OutlierVariacaoTempMax, parametrosexperiencia.OutlierLeiturasNumero,
             parametrosexperiencia.LimiteRatosSala, parametrosexperiencia.NumeroRatosInicial,
@@ -107,7 +107,6 @@ public class ExperimentWatcher extends Thread {
         try {
             Properties p = new Properties();
             p.load(new FileInputStream("config.ini"));
-
             sqlConnection = p.getProperty("sql_database_connection_to");
             sqlPassword = p.getProperty("sql_database_password_to");
             sqlusername = p.getProperty("sql_database_user_to");
@@ -174,7 +173,7 @@ public class ExperimentWatcher extends Thread {
     }
 
     public void setExperimentParameters() throws SQLException {
-        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_GET_TEMP_MIN_MAX);
+        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_GET_EXPERIENCE_PARAMETERS);
         statement.setLong(1, idExperiment);
         ResultSet resultSet = statement.executeQuery();
 

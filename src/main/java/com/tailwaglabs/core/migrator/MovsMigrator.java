@@ -80,7 +80,7 @@ public class MovsMigrator extends Thread {
         timer = null;
         miceStoppedTask = null;
     }
-    private final int MOVS_FREQUENCY = 1 * 1000; // 1 seconds
+    private final int MOVS_FREQUENCY = 1 * 1000; // 1 second
 
     private HashMap<Integer, Integer> rooms_population = new HashMap<>();
 
@@ -89,8 +89,8 @@ public class MovsMigrator extends Thread {
             """;
 
     private final String QUERY_SQL_INSERT_ALERT = """ 
-            INSERT INTO alerta(IDExperiencia, Hora, SalaOrigem, SalaDestino, TipoAlerta, Mensagem, SubTipoAlerta)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO alerta(IDExperiencia, Hora, SalaOrigem, SalaDestino, TipoAlerta, Mensagem, SubTipoAlerta, Sala)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
     public void run() {
@@ -139,9 +139,7 @@ public class MovsMigrator extends Thread {
         for (int i = 2; i <= 10; i++) { // remaining 9 rooms with 0 mice
             rooms_population.put(i, 0);
         }
-
         startTimer();
-        long initTime = System.currentTimeMillis(); //REMOVE
 
         while (TempsMigrator.getExperimentRunning()) {
             String query = String.format(QUERY_MONGO_GET_MOVS, movsTimestamp);
@@ -164,30 +162,31 @@ public class MovsMigrator extends Thread {
                     statement.setInt(5, AlertType.AVISO.getValue());
                     statement.setString(6, message);
                     statement.setInt(7, AlertSubType.ILLEGAL_MOVEMENT.getValue());
+                    statement.setNull(8, Types.NULL);
                     statement.executeUpdate();
                     statement.close();
-                    logger.log("ALERT: invalid movement!"); // REMOVE
+                    logger.log("ALERT: invalid movement!");
                 } else {  // movement can be performed
-                    initTime = System.currentTimeMillis(); // REMOVE
                     stopTimer();
                     startTimer();
                     rooms_population.put(to_room, rooms_population.get(to_room) + 1);
                     rooms_population.put(from_room, rooms_population.get(from_room) - 1);
                     persistMov(doc, System.currentTimeMillis(), watcher.getIdExperiment());
                     if (rooms_population.get(to_room) >= miceLimit) { // Alert if mice number exceeded limit
-                        String message = "Excesso de ratos na Sala %d."; // TODO WRITE Sala
+                        String message = "Excesso de ratos na Sala %d.";
                         message = String.format(message, to_room);
                         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
                         statement.setLong(1, watcher.getIdExperiment());
                         statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
-                        statement.setInt(3, from_room); // TODO REMOVER
-                        statement.setInt(4, to_room); // TODO REMOVER
+                        statement.setNull(3, Types.NULL);
+                        statement.setNull(4, Types.NULL);
                         statement.setInt(5, AlertType.AVISO.getValue());
                         statement.setString(6, message);
                         statement.setInt(7, AlertSubType.MAX_MICE_REACHED.getValue());
+                        statement.setInt(8, to_room);
                         statement.executeUpdate();
                         statement.close();
-                        logger.log("ALERT TOO MANY MICE in room " + to_room); // REMOVE
+                        logger.log("ALERT TOO MANY MICE in room " + to_room);
                     }
                 }
                 logger.log("Mice in rooms: " + rooms_population);
@@ -195,12 +194,8 @@ public class MovsMigrator extends Thread {
             if (doc != null) {
                 movsTimestamp = System.currentTimeMillis();
             }
-//            long elapsedTime = (System.currentTimeMillis() - initTime) / 1000; // REMOVE
-//            logger.log(elapsedTime + " sec"); // REMOVE
-
-            logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); // REINSTATE
+            logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
             try {
-                //noinspection BusyWait
                 Thread.sleep(MOVS_FREQUENCY);
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);

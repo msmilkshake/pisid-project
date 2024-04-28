@@ -1,9 +1,19 @@
 package com.tailwaglabs.core.migrator;
-
+import com.tailwaglabs.core.Logger;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.sql.*;
+import java.util.Properties;
 
 public class ConnectToMysql {
+    private Connection bd_cloud_connection;
+    private String bd_cloud_con = "";
+    private String bd_cloud_user = "";
+    private String bd_cloud_pass = "";
+    Logger logger = null;
+
     public static void show_matrix(int[][] m) {
+        System.out.println("Labyrinth topology:");
         System.out.println("    1234567890");
         for (int i = 1; i < m.length; i++) { // array idx 0 not displayed/used
             System.out.printf("%2d  ", i);
@@ -30,38 +40,33 @@ public class ConnectToMysql {
         while (resultSet.next()) {
             int a = resultSet.getInt("salaa");
             int b = resultSet.getInt("salab");
-//            System.out.println(STR."Sala \{a} -> \{b}"); // visualize data retrieved REMOVE
             topology[a][b] = 1;  // load adjacency matrix
         }
         resultSet.close();
     }
 
     public int[][] getTopology() {
-        String url = "jdbc:mysql://194.210.86.10/pisid2024";
-        String username = "aluno";
-        String password = "aluno";
+        Thread.currentThread().setName("Topology getter");
+        logger = new Logger("Main_Temps_Migration", Logger.TextColor.YELLOW);
         int[][] topology = null;
 
         try {
-            // Load the MySQL JDBC driver
-            Class.forName("com.mysql.cj.jdbc.Driver");
-            // Get a connection to the database
-            Connection connection = DriverManager.getConnection(url, username, password);
-            System.out.println("Connected to MySQL database!\n");
-            int nbRooms = get_number_of_rooms(connection);
+            Properties p = new Properties();
+            p.load(new FileInputStream("config.ini"));
+            bd_cloud_con = p.getProperty("bd_cloud_connection");
+            bd_cloud_user = p.getProperty("bd_cloud_user");
+            bd_cloud_pass = p.getProperty("bd_cloud_password");
+            bd_cloud_connection = DriverManager.getConnection(bd_cloud_con, bd_cloud_pass, bd_cloud_user);
+            int nbRooms = get_number_of_rooms(bd_cloud_connection);
             // create adjacency matrix nbRooms wide
             topology = new int[nbRooms][nbRooms];
             // Query DB to find labyrinth topology
-            load_topology(connection, topology);
-//            show_matrix(topology); // TO REMOVE
-            connection.close();
-        } catch (ClassNotFoundException e) {
-            System.out.println("Error: MySQL JDBC driver not found!");
-            e.printStackTrace();
-
+            load_topology(bd_cloud_connection, topology);
+            bd_cloud_connection.close();
         } catch (SQLException e) {
-            System.out.println("Error: Could not connect to the database!");
-            e.printStackTrace();
+            logger.log("Error: Could not connect to the database! " + e);
+        } catch (IOException e) {
+            logger.log("Error reading config.ini file." + e);
         }
         return topology;
     }
