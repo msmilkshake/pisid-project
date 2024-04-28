@@ -54,6 +54,7 @@ public class TempsMigrator {
     private long currentTimestamp;
     private MongoCursor<Document> cursor;
     private Connection mariadbConnection;
+
     private boolean isBatchMigrated = true;
     private final int MAX_NUMBER_OF_OUTLIERS = 3;
 
@@ -143,6 +144,7 @@ public class TempsMigrator {
             db = mongoClient.getDatabase(mongoDatabase);
             tempsCollection = db.getCollection(mongoCollection);
             mariadbConnection = DriverManager.getConnection(sqlConnection, sqlusername, sqlPassword);
+
         } catch (SQLException e) {
             logger.log("Error connecting to MariaDB." + e);
         } catch (IOException e) {
@@ -279,10 +281,10 @@ public class TempsMigrator {
 
     private boolean validateReading(Document doc) {
         boolean validFormat = doc.containsKey("Leitura") &&
-                              doc.containsKey("Sensor") &&
-                              doc.containsKey("Hora") &&
-                              doc.containsKey("Timestamp") &&
-                              !isWrongTimestamp(doc);
+                doc.containsKey("Sensor") &&
+                doc.containsKey("Hora") &&
+                doc.containsKey("Timestamp") &&
+                !isWrongTimestamp(doc);
 
         try {
             doc.getDouble("Leitura");
@@ -450,11 +452,11 @@ public class TempsMigrator {
 
         boolean isOutlier =
                 currentReading > regressedTemp + watcher.getOutlierTempMaxVar() ||
-                currentReading < regressedTemp - watcher.getOutlierTempMaxVar();
+                        currentReading < regressedTemp - watcher.getOutlierTempMaxVar();
 
         boolean isOutlierWithOutlier =
                 currentReading > outlierRegressedTemp + watcher.getOutlierTempMaxVar() ||
-                currentReading < outlierRegressedTemp - watcher.getOutlierTempMaxVar();
+                        currentReading < outlierRegressedTemp - watcher.getOutlierTempMaxVar();
 
         return isOutlier && isOutlierWithOutlier;
     }

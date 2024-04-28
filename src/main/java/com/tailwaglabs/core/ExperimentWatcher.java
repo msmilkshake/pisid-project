@@ -107,7 +107,6 @@ public class ExperimentWatcher extends Thread {
         try {
             Properties p = new Properties();
             p.load(new FileInputStream("config.ini"));
-
             sqlConnection = p.getProperty("sql_database_connection_to");
             sqlPassword = p.getProperty("sql_database_password_to");
             sqlusername = p.getProperty("sql_database_user_to");
