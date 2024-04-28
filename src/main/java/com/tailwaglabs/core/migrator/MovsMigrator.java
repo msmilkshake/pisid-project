@@ -173,7 +173,7 @@ public class MovsMigrator extends Thread {
                     rooms_population.put(from_room, rooms_population.get(from_room) - 1);
                     persistMov(doc, System.currentTimeMillis(), watcher.getIdExperiment());
                     if (rooms_population.get(to_room) >= miceLimit) { // Alert if mice number exceeded limit
-                        String message = "Excesso de ratos na Sala %d."; // TODO WRITE Sala
+                        String message = "Excesso de ratos na Sala %d.";
                         message = String.format(message, to_room);
                         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
                         statement.setLong(1, watcher.getIdExperiment());

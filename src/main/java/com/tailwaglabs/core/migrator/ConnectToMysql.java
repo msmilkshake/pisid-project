@@ -4,6 +4,7 @@ import java.sql.*;
 
 public class ConnectToMysql {
     public static void show_matrix(int[][] m) {
+        System.out.println("Labyrinth topology");
         System.out.println("    1234567890");
         for (int i = 1; i < m.length; i++) { // array idx 0 not displayed/used
             System.out.printf("%2d  ", i);
