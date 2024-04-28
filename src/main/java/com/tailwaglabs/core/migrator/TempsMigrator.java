@@ -126,7 +126,8 @@ public class TempsMigrator {
         logger = new Logger("Main_Temps_Migration", Logger.TextColor.GREEN);
         logger.setEnabled(LOGGER_ENABLED);
         try {
-            ExperimentWatcher.setMigratorInstance(this);
+            ExperimentWatcher.setTempsMigratorInstance(this);
+
             restartQueues();
             Properties p = new Properties();
             p.load(new FileInputStream("config.ini"));
@@ -143,7 +144,7 @@ public class TempsMigrator {
             mongoClient = new MongoClient(mongoHost, mongoPort);
             db = mongoClient.getDatabase(mongoDatabase);
             tempsCollection = db.getCollection(mongoCollection);
-            mariadbConnection = DriverManager.getConnection(sqlConnection, sqlusername, sqlPassword);
+            connectToMariaDB();
 
         } catch (SQLException e) {
             logger.log("Error connecting to MariaDB." + e);
@@ -153,8 +154,26 @@ public class TempsMigrator {
         currentTimestamp = System.currentTimeMillis();
     }
 
+    public void connectToMariaDB() throws SQLException {
+        mariadbConnection = DriverManager.getConnection(sqlConnection, sqlusername, sqlPassword);
+    }
+
     private void migrationLoop() {
         while (true) {
+
+            // Connection lost...
+            if (mariadbConnection == null) {
+                try {
+                    logger.log("Not connected to MariaDB.");
+                    logger.log("--- Sleeping " + (TEMPS_FREQUENCY / 1000) + " seconds... ---\n");
+                    //noinspection BusyWait
+                    Thread.sleep(TEMPS_FREQUENCY);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                continue;
+            }
+
             Document tempsQuery = Document.parse(String.format(QUERY_MONGO_GET_TEMPS, currentTimestamp));
             cursor = tempsCollection.find(tempsQuery).iterator();
 
@@ -173,7 +192,9 @@ public class TempsMigrator {
             while (cursor.hasNext()) {
                 doc = cursor.next();
                 logger.log(doc);
-                persistTemp(doc);
+                boolean persistSuccess = persistTemp(doc);
+                // TODO Ruben
+                // Se guardar com sucesso ir ao Mongo e colocar o campo deste registo com Migrated: 1
             }
             if (doc != null) {
                 currentTimestamp = System.currentTimeMillis();
@@ -189,17 +210,45 @@ public class TempsMigrator {
         }
     }
 
-    public void persistTemp(Document doc) {
+    public boolean persistTemp(Document doc) {
 
         Boolean isValidReading = validateReading(doc);
 
-        Double reading = doc.getDouble("Leitura");
-        Integer sensor = doc.getInteger("Sensor");
-        Long recordedTimestamp = doc.getLong("Timestamp");
-        String readingTimeStr = doc.getString("Hora").replace(" ", "T");
-        LocalDateTime readingTime = readingTimeStr != null ?
-                LocalDateTime.parse(readingTimeStr) :
-                null;
+        Double reading = null;
+        try {
+            reading = doc.getDouble("Leitura");
+        } catch (Exception e) {
+            logger.log("Error getting reading \"Leitura\". " + e);
+        }
+        Integer sensor = null;
+        try {
+            sensor = doc.getInteger("Sensor");
+        } catch (Exception e) {
+            logger.log("Error getting reading \"Sensor\". " + e);
+        }
+        Long recordedTimestamp = null;
+        try {
+            recordedTimestamp = doc.getLong("Timestamp");
+        } catch (Exception e) {
+            logger.log("Error getting reading \"Timestamp\". " + e);
+        }
+        String readingTimeStr = null;
+        try {
+            readingTimeStr = doc.getString("Hora");
+        } catch (Exception e) {
+            logger.log("Error getting reading \"Hora\". " + e);
+        }
+        if (readingTimeStr != null) {
+            readingTimeStr = readingTimeStr.replace(" ", "T");
+        }
+        LocalDateTime readingTime = null;
+        try {
+            readingTime = readingTimeStr != null ?
+                    LocalDateTime.parse(readingTimeStr) :
+                    null;
+        } catch (Exception e) {
+            logger.log("Could not create java date because \"Hora\" is invalid. " + e);
+        }
 
         boolean isOutlier = false;
 
@@ -274,17 +323,19 @@ public class TempsMigrator {
                 throw new SQLException("Creating record failed, no ID obtained.");
             }
             statement.close();
+            return true;
         } catch (Exception e) {
             logger.log("Error Inserting in the database. " + e);
+            return false;
         }
     }
 
     private boolean validateReading(Document doc) {
         boolean validFormat = doc.containsKey("Leitura") &&
-                doc.containsKey("Sensor") &&
-                doc.containsKey("Hora") &&
-                doc.containsKey("Timestamp") &&
-                !isWrongTimestamp(doc);
+                              doc.containsKey("Sensor") &&
+                              doc.containsKey("Hora") &&
+                              doc.containsKey("Timestamp") &&
+                              !isWrongTimestamp(doc);
 
         try {
             doc.getDouble("Leitura");
@@ -440,7 +491,6 @@ public class TempsMigrator {
 
         PolynomialFunction regression = new PolynomialFunction(coefficients);
         PolynomialFunction outlierRegression = new PolynomialFunction(outlierCoefficients);
-
         double regressedTemp = regression.value(10);
         double outlierRegressedTemp = outlierRegression.value(10);
 
@@ -452,11 +502,11 @@ public class TempsMigrator {
 
         boolean isOutlier =
                 currentReading > regressedTemp + watcher.getOutlierTempMaxVar() ||
-                        currentReading < regressedTemp - watcher.getOutlierTempMaxVar();
+                currentReading < regressedTemp - watcher.getOutlierTempMaxVar();
 
         boolean isOutlierWithOutlier =
                 currentReading > outlierRegressedTemp + watcher.getOutlierTempMaxVar() ||
-                        currentReading < outlierRegressedTemp - watcher.getOutlierTempMaxVar();
+                currentReading < outlierRegressedTemp - watcher.getOutlierTempMaxVar();
 
         return isOutlier && isOutlierWithOutlier;
     }
@@ -527,11 +577,13 @@ public class TempsMigrator {
 
         if (compareHourWithTimeStamp > 0 || checkLastFifteenMinutes < 0) {
             isWrongTimestamp = true;
-
         }
 
         return isWrongTimestamp;
+    }
 
+    public void setMariadbConnection(Connection mariadbConnection) {
+        this.mariadbConnection = mariadbConnection;
     }
 
     public static void main(String[] args) {
@@ -540,7 +592,6 @@ public class TempsMigrator {
         // Immediately launches the Thread: Thread_Experiment_Watcher
         TempsMigrator migrator = new TempsMigrator();
         migrator.run();
-
     }
 
 }

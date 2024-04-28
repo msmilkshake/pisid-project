@@ -24,7 +24,8 @@ public class ExperimentWatcher extends Thread {
     private final boolean LOGGER_ENABLED = true;
 
     private static ExperimentWatcher watcher = new ExperimentWatcher();
-    private static TempsMigrator migrator = null;
+    private static TempsMigrator tempsMigrator = null;
+    private static MovsMigrator movsMigrator = null;
 
     static {
         watcher.start();
@@ -83,8 +84,12 @@ public class ExperimentWatcher extends Thread {
     Timer timer = null;
     TimerTask experimentLimitTask = null;
 
-    public static void setMigratorInstance(TempsMigrator migrator) {
-        ExperimentWatcher.migrator = migrator;
+    public static void setTempsMigratorInstance(TempsMigrator migrator) {
+        ExperimentWatcher.tempsMigrator = migrator;
+    }
+
+    public static void setMovsMigratorInstance(MovsMigrator migrator) {
+        ExperimentWatcher.movsMigrator = migrator;
     }
 
     private TimerTask createExperimentLimitTask() {
@@ -129,6 +134,21 @@ public class ExperimentWatcher extends Thread {
 
     public void watchLoop() {
         while (true) {
+
+            // Connection lost...
+            if (mariadbConnection == null) {
+                try {
+                    logger.log("Not connected to MariaDB.");
+                    reconnect();
+                    logger.log("--- Sleeping " + (REFRESH_RATE / 1000) + " seconds... ---\n");
+                    //noinspection BusyWait
+                    Thread.sleep(REFRESH_RATE);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                continue;
+            }
+
             try {
                 ResultSet experimentResults = mariadbConnection.createStatement()
                         .executeQuery(QUERY_SQL_GET_RUNNING_EXPERIMENT);
@@ -139,14 +159,34 @@ public class ExperimentWatcher extends Thread {
                     stopExperiment();
                 }
 
-                logger.log("Sleeping " + (REFRESH_RATE / 1000) + " seconds.");
+                logger.log("--- Sleeping " + (REFRESH_RATE / 1000) + " seconds... ---\n");
+                //noinspection BusyWait
                 Thread.sleep(REFRESH_RATE);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             } catch (SQLException e) {
-                throw new RuntimeException(e);
+                tempsMigrator.setMariadbConnection(null);
+                movsMigrator.setMariadbConnection(null);
+                mariadbConnection = null;
+                e.printStackTrace(); // TODO - Thrown HERE!!
             }
         }
+    }
+
+    private void reconnect() {
+        try {
+            DriverManager.setLoginTimeout(2);
+            mariadbConnection = DriverManager.getConnection(sqlConnection, sqlusername, sqlPassword);
+        } catch (SQLException e) {
+            logger.log("Unable to reconnect to MariaDB");
+        }
+        try {
+            tempsMigrator.connectToMariaDB();
+            movsMigrator.connectToMariaDB();
+        } catch (SQLException e) {
+            logger.log("Unable to reconnect others to MariaDB");
+        }
+        DriverManager.setLoginTimeout(30);
     }
 
     private void startExperiment(ResultSet results) throws SQLException {
@@ -156,7 +196,7 @@ public class ExperimentWatcher extends Thread {
         TempsMigrator.setExperimentRunning(true);
         experimentLimitTask = createExperimentLimitTask();
         startTimer();
-        migrator.restartQueues();
+        tempsMigrator.restartQueues();
         new MovsMigrator().start();
         logger.log("Experiment #" + idExperiment + " started.");
     }

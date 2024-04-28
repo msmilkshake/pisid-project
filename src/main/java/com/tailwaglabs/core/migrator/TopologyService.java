@@ -5,22 +5,23 @@ import java.io.IOException;
 import java.sql.*;
 import java.util.Properties;
 
-public class ConnectToMysql {
+public class TopologyService {
     private Connection bd_cloud_connection;
     private String bd_cloud_con = "";
     private String bd_cloud_user = "";
     private String bd_cloud_pass = "";
-    Logger logger = null;
+    private Logger logger = null;
 
-    public static void show_matrix(int[][] m) {
-        System.out.println("Labyrinth topology:");
-        System.out.println("    1234567890");
+    public void show_matrix(int[][] m) {
+        logger.log("Labyrinth topology:");
+        logger.log("    1234567890");
         for (int i = 1; i < m.length; i++) { // array idx 0 not displayed/used
-            System.out.printf("%2d  ", i);
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format("%2d  ", i));
             for (int j = 1; j < m.length; j++) { // array idx 0 not displayed/used
-                System.out.print(m[i][j]);
+                sb.append(m[i][j]);
             }
-            System.out.println();
+            logger.log(sb);
         }
     }
 

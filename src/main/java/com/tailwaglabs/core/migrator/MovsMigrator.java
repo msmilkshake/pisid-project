@@ -49,6 +49,8 @@ public class MovsMigrator extends Thread {
     Timer timer = null;
     TimerTask miceStoppedTask = null;
 
+    TopologyService topologyService = null;
+
     Logger logger = null;
 
     long movsTimestamp = System.currentTimeMillis();
@@ -60,7 +62,7 @@ public class MovsMigrator extends Thread {
                 try {
                     watcher.alertMovementAbsence(watcher.getSecondsWithoutMovement());
                 } catch (SQLException e) {
-                    throw new RuntimeException(e);
+                    e.printStackTrace();
                 }
             }
         };
@@ -106,7 +108,10 @@ public class MovsMigrator extends Thread {
         Thread.currentThread().setName("Main_Movs_Migration");
         logger = new Logger("Main_Movs_Migration", Logger.TextColor.CYAN);
         logger.setEnabled(LOGGER_ENABLED);
+        topologyService = new TopologyService();
         try {
+            ExperimentWatcher.setMovsMigratorInstance(this);
+
             Properties p = new Properties();
             p.load(new FileInputStream("config.ini"));
 
@@ -122,7 +127,7 @@ public class MovsMigrator extends Thread {
             mongoClient = new MongoClient(mongoHost, mongoPort);
             db = mongoClient.getDatabase(mongoDatabase);
             movsCollection = db.getCollection(mongoCollection);
-            mariadbConnection = DriverManager.getConnection(sqlConnection, sqlusername, sqlPassword);
+            connectToMariaDB();
         } catch (SQLException e) {
             logger.log("Error connecting to MariaDB." + e);
         } catch (IOException e) {
@@ -131,10 +136,14 @@ public class MovsMigrator extends Thread {
         currentTimestamp = System.currentTimeMillis();
     }
 
+    public void connectToMariaDB() throws SQLException {
+        mariadbConnection = DriverManager.getConnection(sqlConnection, sqlusername, sqlPassword);
+    }
+
     private void migrationLoop() throws SQLException {
-        int[][] topology = new ConnectToMysql().getTopology(); // get labyrinth topology from relational
+        int[][] topology = topologyService.getTopology(); // get labyrinth topology from relational
         int miceLimit = watcher.getMiceLimit();
-        ConnectToMysql.show_matrix(topology); // show labyrinth topology retrieved from relational
+        topologyService.show_matrix(topology); // show labyrinth topology retrieved from relational
         rooms_population.put(1, watcher.getStartingMiceNumber()); // set initial mice number in 1st room
         for (int i = 2; i <= 10; i++) { // remaining 9 rooms with 0 mice
             rooms_population.put(i, 0);
@@ -142,6 +151,20 @@ public class MovsMigrator extends Thread {
         startTimer();
 
         while (TempsMigrator.getExperimentRunning()) {
+
+            // Connection lost...
+            if (mariadbConnection == null) {
+                try {
+                    logger.log("Not connected to MariaDB.");
+                    logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
+                    //noinspection BusyWait
+                    Thread.sleep(MOVS_FREQUENCY);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                continue;
+            }
+
             String query = String.format(QUERY_MONGO_GET_MOVS, movsTimestamp);
             FindIterable<Document> results = movsCollection.find(BsonDocument.parse(query));
             Document doc = null;
@@ -223,8 +246,7 @@ public class MovsMigrator extends Thread {
         }
     }
 
-//    public static void main(String[] args) throws SQLException {
-//        Thread.currentThread().setName("Main_Movs_Migration");
-//        new MovsMigrator().run();
-//    }
+    public void setMariadbConnection(Connection mariadbConnection) {
+        this.mariadbConnection = mariadbConnection;
+    }
 }
