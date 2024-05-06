@@ -28,6 +28,12 @@ public class Logger {
         }
     }
 
+    public enum Severity {
+        DANGER,
+        WARNING,
+        INFO
+    }
+
     private String name;
     private DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private boolean isEnabled = true;
@@ -42,25 +48,49 @@ public class Logger {
         this.color = color;
     }
 
-    public void log(Object message) {
+    public void log(Severity severity, Object message) {
+        StringBuilder sb = new StringBuilder();
+        switch (severity) {
+            case DANGER:
+                sb.append(TextColor.RED);
+                break;
+            case WARNING:
+                sb.append(TextColor.YELLOW);
+                break;
+            case INFO:
+                sb.append(TextColor.CYAN);
+                break;
+        }
+        sb.append(" (").append(severity).append(") ").append(RESET);
         if (isEnabled) {
-            StringBuilder sb = new StringBuilder();
-            if (color != null) {
-                sb.append(color.getColor());
-            }
-            sb.append("[")
-                    .append(name)
-                    .append(" - ")
-                    .append(LocalDateTime.now().format(formatter))
-                    .append("] ");
-            if (color != null) {
-                sb.append(RESET);
-            }
-            sb.append(message.toString());
-
-            System.out.println(sb);
+            System.out.println(sb + getMessage(message));
         }
     }
+
+    public void log(Object message) {
+        if (isEnabled) {
+            System.out.println(getMessage(message));
+        }
+    }
+
+    public String getMessage(Object message) {
+        StringBuilder sb = new StringBuilder();
+        if (color != null) {
+            sb.append(color.getColor());
+        }
+        sb.append("[")
+                .append(name)
+                .append(" - ")
+                .append(LocalDateTime.now().format(formatter))
+                .append("] ");
+        if (color != null) {
+            sb.append(RESET);
+        }
+        sb.append(message.toString());
+
+        return sb.toString();
+    }
+
 
     public void setEnabled(boolean enabled) {
         isEnabled = enabled;

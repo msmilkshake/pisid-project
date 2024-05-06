@@ -148,8 +148,10 @@ public class TempsMigrator {
 
         } catch (SQLException e) {
             logger.log("Error connecting to MariaDB." + e);
+            
         } catch (IOException e) {
             logger.log("Error reading config.ini file." + e);
+            
         }
         currentTimestamp = System.currentTimeMillis();
     }
@@ -169,7 +171,8 @@ public class TempsMigrator {
                     //noinspection BusyWait
                     Thread.sleep(TEMPS_FREQUENCY);
                 } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
+                    //throw new RuntimeException(e);
+                    
                 }
                 continue;
             }
@@ -205,7 +208,8 @@ public class TempsMigrator {
                 //noinspection BusyWait
                 Thread.sleep(TEMPS_FREQUENCY);
             } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+                //throw new RuntimeException(e);
+                
             }
         }
     }
@@ -260,6 +264,7 @@ public class TempsMigrator {
                 sendTooManyOutliersAlert(doc);
             } catch (SQLException e) {
                 logger.log("Error connecting to MariaDB." + e);
+                
             }
 
             Queue<Double> readingsQueue = sensorReadingsQueues.get(sensor);
@@ -326,6 +331,7 @@ public class TempsMigrator {
             return true;
         } catch (Exception e) {
             logger.log("Error Inserting in the database. " + e);
+            
             return false;
         }
     }
@@ -342,6 +348,7 @@ public class TempsMigrator {
             doc.getInteger("Sensor");
             doc.getLong("Timestamp");
         } catch (ClassCastException e) {
+            
             return false;
         }
 
@@ -534,18 +541,22 @@ public class TempsMigrator {
 
         String message = "Sensor de temperatura %d registou demasiados Outliers.";
 
-        if (numberOfOutliers > MAX_NUMBER_OF_OUTLIERS) {
-            statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
-            statement.setLong(1, watcher.getIdExperiment());
-            statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
-            statement.setInt(3, sensor);
-            statement.setDouble(4, actualTemp);
-            statement.setInt(5, AlertType.INFORMATIVO.getValue());
-            message = String.format(message, sensor);
-            statement.setString(6, message);
-            statement.setInt(7, AlertSubType.TEMPERATURE_OUTLIERS.getValue());
-            statement.executeUpdate();
-            statement.close();
+        try {
+            if (numberOfOutliers > MAX_NUMBER_OF_OUTLIERS) {
+                statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+                statement.setLong(1, watcher.getIdExperiment());
+                statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+                statement.setInt(3, sensor);
+                statement.setDouble(4, actualTemp);
+                statement.setInt(5, AlertType.INFORMATIVO.getValue());
+                message = String.format(message, sensor);
+                statement.setString(6, message);
+                statement.setInt(7, AlertSubType.TEMPERATURE_OUTLIERS.getValue());
+                statement.executeUpdate();
+                statement.close();
+            }
+        } catch (SQLException e) {
+            logger.log( Logger.Severity.WARNING, e.getMessage() + " Tipo de alerta: " + AlertType.INFORMATIVO.toString());
         }
     }
 
@@ -559,6 +570,7 @@ public class TempsMigrator {
         try {
             hourFromMongo = LocalDateTime.parse(hourFromMongoString.replace(" ", "T"));
         } catch (DateTimeParseException e) {
+            
             return false;
         }
 
