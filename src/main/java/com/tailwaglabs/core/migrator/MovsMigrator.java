@@ -146,7 +146,7 @@ public class MovsMigrator extends Thread {
         int startingMiceNumber = watcher.getStartingMiceNumber();
         topologyService.show_matrix(topology); // show labyrinth topology retrieved from relational
         rooms_population.put(1, startingMiceNumber); // set starting mice number in 1st room
-        persistMicePopulation(1, startingMiceNumber); // write starting mice number to relational
+        persistInitMicePopulation(startingMiceNumber, watcher.getIdExperiment());
         for (int i = 2; i <= 10; i++) { // remaining 9 rooms with 0 mice
             rooms_population.put(i, 0);
         }
@@ -227,6 +227,24 @@ public class MovsMigrator extends Thread {
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
+        }
+    }
+    private void persistInitMicePopulation(int nbMice, long exp) { // init the 10 rooms in relational
+        String sqlQuery = "";
+        try {
+            Statement s = mariadbConnection.createStatement();
+            sqlQuery = String.format("" + "INSERT INTO salas_ratos(sala, ratos, experiencia)\n" +
+                    "VALUES (%d, %d, %d)", 1, nbMice, exp);
+            s.executeUpdate(sqlQuery);
+            for (int sala = 2; sala <= 10 ; sala++) {
+                sqlQuery = String.format("" + "INSERT INTO salas_ratos(sala, ratos, experiencia)\n" +
+                        "VALUES (%d, %d, %d)", sala, 0, exp);
+                s.executeUpdate(sqlQuery);
+            }
+            s.close();
+        } catch (Exception e) {
+            logger.log("Error Inserting in the database . " + e);
+            logger.log(sqlQuery);
         }
     }
     private void persistMicePopulation(int room, int nbMice) {
