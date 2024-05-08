@@ -143,13 +143,14 @@ public class MovsMigrator extends Thread {
     private void migrationLoop() throws SQLException {
         int[][] topology = topologyService.getTopology(); // get labyrinth topology from relational
         int miceLimit = watcher.getMiceLimit();
+        int startingMiceNumber = watcher.getStartingMiceNumber();
         topologyService.show_matrix(topology); // show labyrinth topology retrieved from relational
-        rooms_population.put(1, watcher.getStartingMiceNumber()); // set initial mice number in 1st room
+        rooms_population.put(1, startingMiceNumber); // set starting mice number in 1st room
+        persistMicePopulation(1, startingMiceNumber); // write starting mice number to relational
         for (int i = 2; i <= 10; i++) { // remaining 9 rooms with 0 mice
             rooms_population.put(i, 0);
         }
-        startTimer();
-
+        startTimer(); // timer to keep track of mice movement
         while (TempsMigrator.getExperimentRunning()) {
 
             // Connection lost...
@@ -190,8 +191,8 @@ public class MovsMigrator extends Thread {
                     statement.close();
                     logger.log("ALERT: invalid movement!");
                 } else {  // movement can be performed
-                    stopTimer();
-                    startTimer();
+                    stopTimer();  // reset timer to keep track of mice movement
+                    startTimer(); // reset timer to keep track of mice movement
                     rooms_population.put(to_room, rooms_population.get(to_room) + 1);
                     rooms_population.put(from_room, rooms_population.get(from_room) - 1);
                     persistMov(doc, System.currentTimeMillis(), watcher.getIdExperiment());
@@ -211,6 +212,9 @@ public class MovsMigrator extends Thread {
                         statement.close();
                         logger.log("ALERT TOO MANY MICE in room " + to_room);
                     }
+                    for (var entry : rooms_population.entrySet()) {
+                        persistMicePopulation(entry.getKey(), entry.getValue());
+                    }
                 }
                 logger.log("Mice in rooms: " + rooms_population);
             }
@@ -225,8 +229,19 @@ public class MovsMigrator extends Thread {
             }
         }
     }
+    private void persistMicePopulation(int room, int nbMice) {
+        String sqlQuery = String.format("" + "UPDATE salas_ratos SET ratos = %d WHERE sala = %d", nbMice, room);
+        try {
+            Statement s = mariadbConnection.createStatement();
+            s.executeUpdate(sqlQuery);
+            s.close();
+        } catch (Exception e) {
+            logger.log("Error Inserting in the database . " + e);
+            logger.log(sqlQuery);
+        }
+    }
 
-    public void persistMov(Document doc, long timestamp, long experiencia) {
+    private void persistMov(Document doc, long timestamp, long experiencia) {
         int salaOrigem = doc.getInteger("SalaOrigem");
         int salaDestino = doc.getInteger("SalaDestino");
         LocalDateTime hora = LocalDateTime.parse(doc.getString("Hora").replace(" ", "T"));
