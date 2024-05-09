@@ -346,7 +346,7 @@ public class TempsMigrator {
     }
 
     private boolean validateReading(Document doc) {
-        boolean validFormat = !doc.containsKey("Leitura") &&
+        boolean validFormat = doc.containsKey("Leitura") &&
                               doc.containsKey("Sensor") &&
                               doc.containsKey("Hora") &&
                               doc.containsKey("Timestamp") &&
