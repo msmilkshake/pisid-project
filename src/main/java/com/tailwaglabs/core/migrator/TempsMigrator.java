@@ -106,9 +106,14 @@ public class TempsMigrator {
 
     private final int TEMPS_FREQUENCY = 3 * 1000; // 3 seconds
 
+    private final int TEMPS_ABSENCE_LIMIT = 5 * 1000; // 3 seconds
+
     private ExperimentWatcher watcher = ExperimentWatcher.getInstance();
 
     private List<Boolean> lastTenReadings = new ArrayList<>();
+
+    Timer timer = null;
+    TimerTask temperatureAbsenceTask = null;
 
 
     private void run() {
@@ -182,6 +187,10 @@ public class TempsMigrator {
             Document tempsQuery = Document.parse(String.format(QUERY_MONGO_GET_TEMPS, currentTimestamp));
             cursor = tempsCollection.find(tempsQuery).iterator();
 
+            System.out.println("size " + tempsQuery.size() );
+            System.out.println("conteudo AAAAAA " + tempsQuery);
+            System.out.println("BBBBBBB " + cursor);
+
             // TODO @Rcarvalho18 - AUSENCIA DE LEITURAS
             // Começamos com um boolean a false - Indica que não há agendamento a decorrer
             // Se chegarem 0 resultados na tempsQuery && se a flag estiver a false
@@ -219,10 +228,11 @@ public class TempsMigrator {
     public boolean persistTemp(Document doc) {
 
         Boolean isValidReading = validateReading(doc);
+        logger.log("Valid reading: " + isValidReading);
         lastTenReadings.add(isValidReading);
 
         try {
-            checkTooManyErrors(doc);
+            checkTooManyErrors();
         } catch (SQLException e) {
             logger.log("Error connecting to MariaDB." + e);
         }
@@ -607,13 +617,10 @@ public class TempsMigrator {
         this.mariadbConnection = mariadbConnection;
     }
 
-    public void checkTooManyErrors(Document doc) throws SQLException {
-        // Minimun 10 readings to analyze
+    public void checkTooManyErrors() throws SQLException {
         if(lastTenReadings.size() <= 10) {
             return;
         }
-
-        int sensor = doc.getInteger("Sensor");
 
         int errorLimit = 0;
         for(Boolean error : lastTenReadings) {
@@ -625,18 +632,60 @@ public class TempsMigrator {
         lastTenReadings.remove(0);
 
         if(errorLimit >= 5) {
-            PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
-            statement.setLong(1, watcher.getIdExperiment());
-            statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
-            statement.setInt(3, sensor);
-            statement.setDouble(4, doc.getDouble("Leitura"));
-            statement.setInt(5, AlertType.AVISO.getValue());
-            String message = "Sensores de temperatura registaram demasiados erros.";
-            message = String.format(message, "mínimo", sensor);
-            statement.setString(6, message);
-            statement.setInt(7, AlertSubType.SENSOR_ERRORS.getValue());
-            statement.executeUpdate();
+            logger.log(Logger.Severity.DANGER, "Sending too many errors Alert");
+            try {
+                PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+                statement.setLong(1, watcher.getIdExperiment());
+                statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+                statement.setNull(3, Types.INTEGER);
+                statement.setNull(4, Types.DOUBLE);
+                statement.setInt(5, AlertType.AVISO.getValue());
+                String message = "Sensores de temperatura registaram demasiados erros.";
+                statement.setString(6, message);
+                statement.setInt(7, AlertSubType.SENSOR_ERRORS.getValue());
+                statement.executeUpdate();
+            } catch(Exception e) {
+                logger.log(Logger.Severity.WARNING, "Error persisting errors alert");
+            }
+
+
         }
+    }
+
+    private TimerTask temperatureReadingsAbsence() {
+        return new TimerTask() {
+            @Override
+            public void run() {
+                try {
+                    PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+                    statement.setLong(1, watcher.getIdExperiment());
+                    statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+                    statement.setNull(3, Types.INTEGER);
+                    statement.setNull(4, Types.INTEGER);
+                    statement.setInt(5, AlertType.PERIGO.getValue());
+                    String message = "Não foram recebidas leituras de temperaturas nos últimos 5 segundos.";
+                    statement.setString(6, message);
+                    statement.setInt(7, AlertSubType.TEMPERATURE_SENSOR_ABSENCE.getValue());
+                    statement.executeUpdate();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+        };
+    }
+
+    private void startTimer() {
+        temperatureAbsenceTask = temperatureReadingsAbsence();
+        timer = new Timer();
+        timer.schedule(temperatureAbsenceTask, TEMPS_ABSENCE_LIMIT);
+    }
+
+    private void stopTimer() {
+        temperatureAbsenceTask.cancel();
+        timer.cancel();
+        timer.purge();
+        timer = null;
+        temperatureAbsenceTask = null;
     }
 
     public static void main(String[] args) {

@@ -52,28 +52,28 @@ public class Logger {
         StringBuilder sb = new StringBuilder();
         switch (severity) {
             case DANGER:
-                sb.append(TextColor.RED);
+                sb.append(TextColor.RED.getColor());
                 break;
             case WARNING:
-                sb.append(TextColor.YELLOW);
+                sb.append(TextColor.YELLOW.getColor());
                 break;
             case INFO:
-                sb.append(TextColor.CYAN);
+                sb.append(TextColor.CYAN.getColor());
                 break;
         }
-        sb.append(" (").append(severity).append(") ").append(RESET);
+        sb.append("(").append(severity).append(") ").append(RESET);
         if (isEnabled) {
-            System.out.println(sb + getMessage(message));
+            System.out.println(getMessage(message, sb.toString()));
         }
     }
 
     public void log(Object message) {
         if (isEnabled) {
-            System.out.println(getMessage(message));
+            System.out.println(getMessage(message, null));
         }
     }
 
-    public String getMessage(Object message) {
+    public String getMessage(Object message, String severity) {
         StringBuilder sb = new StringBuilder();
         if (color != null) {
             sb.append(color.getColor());
@@ -85,6 +85,9 @@ public class Logger {
                 .append("] ");
         if (color != null) {
             sb.append(RESET);
+        }
+        if (severity != null) {
+            sb.append(severity);
         }
         sb.append(message.toString());
 
