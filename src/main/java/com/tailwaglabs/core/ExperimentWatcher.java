@@ -21,7 +21,7 @@ import java.util.TimerTask;
  */
 public class ExperimentWatcher extends Thread {
 
-    private final boolean LOGGER_ENABLED = true;
+    private final boolean LOGGER_ENABLED = false;
 
     private static ExperimentWatcher watcher = new ExperimentWatcher();
     private static TempsMigrator tempsMigrator = null;

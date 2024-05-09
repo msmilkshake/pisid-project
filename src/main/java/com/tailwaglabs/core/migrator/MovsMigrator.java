@@ -15,6 +15,7 @@ import org.bson.Document;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.sql.*;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -111,19 +112,15 @@ public class MovsMigrator extends Thread {
         topologyService = new TopologyService();
         try {
             ExperimentWatcher.setMovsMigratorInstance(this);
-
             Properties p = new Properties();
             p.load(new FileInputStream("config.ini"));
-
             mongoHost = p.getProperty("mongo_host");
             mongoPort = Integer.parseInt(p.getProperty("mongo_port"));
             mongoDatabase = p.getProperty("mongo_database");
             mongoCollection = p.getProperty("collection_movs");
-
             sqlConnection = p.getProperty("sql_database_connection_to");
             sqlPassword = p.getProperty("sql_database_password_to");
             sqlusername = p.getProperty("sql_database_user_to");
-
             mongoClient = new MongoClient(mongoHost, mongoPort);
             db = mongoClient.getDatabase(mongoDatabase);
             movsCollection = db.getCollection(mongoCollection);
@@ -145,9 +142,10 @@ public class MovsMigrator extends Thread {
         int miceLimit = watcher.getMiceLimit();
         int startingMiceNumber = watcher.getStartingMiceNumber();
         topologyService.show_matrix(topology); // show labyrinth topology retrieved from relational
-        rooms_population.put(1, startingMiceNumber); // set starting mice number in 1st room
+        rooms_population.put(1, startingMiceNumber); // set starting mice number in 1st room (HASHMAP)
+        // Initiates the rooms - sets 1st room with mice and fills others with 0 - sets experience number
         persistInitMicePopulation(startingMiceNumber, watcher.getIdExperiment());
-        for (int i = 2; i <= 10; i++) { // remaining 9 rooms with 0 mice
+        for (int i = 2; i <= 10; i++) { // remaining 9 rooms with 0 mice (HASHMAP)
             rooms_population.put(i, 0);
         }
         startTimer(); // timer to keep track of mice movement
@@ -157,7 +155,7 @@ public class MovsMigrator extends Thread {
             if (mariadbConnection == null) {
                 try {
                     logger.log("Not connected to MariaDB.");
-                    logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
+//                    logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); REINSTATE
                     //noinspection BusyWait
                     Thread.sleep(MOVS_FREQUENCY);
                 } catch (InterruptedException e) {
@@ -173,6 +171,9 @@ public class MovsMigrator extends Thread {
 
             while (cursor.hasNext()) {
                 doc = cursor.next();
+//                System.out.println("DEBUG timestamp: " + doc.getLong("Timestamp")); // REMOVE OBJ colocar isError a 0 / 1
+//                System.out.println(validateReading(doc)); HERE
+
                 int from_room = doc.getInteger("SalaOrigem");
                 int to_room = doc.getInteger("SalaDestino");
                 if (from_room == to_room || topology[from_room][to_room] == 0 || rooms_population.get(from_room) == 0) {
@@ -195,7 +196,7 @@ public class MovsMigrator extends Thread {
                     startTimer(); // reset timer to keep track of mice movement
                     rooms_population.put(to_room, rooms_population.get(to_room) + 1);
                     rooms_population.put(from_room, rooms_population.get(from_room) - 1);
-                    persistMov(doc, System.currentTimeMillis(), watcher.getIdExperiment());
+                    persistMov(doc, watcher.getIdExperiment());
                     if (rooms_population.get(to_room) >= miceLimit) { // Alert if mice number exceeded limit
                         String message = "Excesso de ratos na Sala %d.";
                         message = String.format(message, to_room);
@@ -221,7 +222,7 @@ public class MovsMigrator extends Thread {
             if (doc != null) {
                 movsTimestamp = System.currentTimeMillis();
             }
-            logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
+//            logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); REINSTATE
             try {
                 Thread.sleep(MOVS_FREQUENCY);
             } catch (InterruptedException e) {
@@ -229,6 +230,20 @@ public class MovsMigrator extends Thread {
             }
         }
     }
+    private boolean validateReading(Document doc) { // returns true with valid readings
+        long currentTimeMillis = Instant.now().toEpochMilli();
+        long fifteenMinutesAgo = currentTimeMillis - (15 * 60 * 1000);
+        long timeStamp = doc.getLong("Timestamp");
+        System.out.println("TS: " + timeStamp + "\n15: " + fifteenMinutesAgo);
+        System.out.println("dif: " + (timeStamp -fifteenMinutesAgo));
+
+        return  doc.containsKey("SalaDestino") &&
+                doc.containsKey("SalaOrigem") &&
+                doc.containsKey("Hora") &&
+                doc.containsKey("Timestamp") &&
+                (timeStamp > fifteenMinutesAgo);
+    }
+
     private void persistInitMicePopulation(int nbMice, long exp) { // init the 10 rooms in relational
         String sqlQuery = "";
         try {
@@ -259,14 +274,18 @@ public class MovsMigrator extends Thread {
         }
     }
 
-    private void persistMov(Document doc, long timestamp, long experiencia) {
+    private void persistMov(Document doc, long experiencia) {
+        System.out.println("HERE!!!");
         int salaOrigem = doc.getInteger("SalaOrigem");
         int salaDestino = doc.getInteger("SalaDestino");
         LocalDateTime hora = LocalDateTime.parse(doc.getString("Hora").replace(" ", "T"));
+        long timestamp = doc.getLong("Timestamp");
+        int isError = validateReading(doc) ? 0 : 1; // if 0 there is no error
+        System.out.println("IsERROR: " + isError);
 
-        String sqlQuery = String.format("" +
-                        "INSERT INTO medicoespassagens(IDExperiencia, SalaOrigem, SalaDestino, Hora, TimestampRegisto)\n" +
-                        "VALUES (%d, %d, %d, '%s', FROM_UNIXTIME(%d / 1000))",
+        String sqlQuery = String.format(
+                        "INSERT INTO medicoespassagens(IDExperiencia, SalaOrigem, SalaDestino, Hora, TimestampRegisto)" +
+                        "VALUES (%d, %d, %d, '%s', FROM_UNIXTIME(%d)",
                 experiencia, salaOrigem, salaDestino, hora, timestamp
         );
         try {
@@ -274,17 +293,15 @@ public class MovsMigrator extends Thread {
             Statement s = mariadbConnection.createStatement();
             int rowsChanged = s.executeUpdate(sqlQuery);
             s.close();
-
             if (rowsChanged > 0) {
                 Document filter = new Document("_id", doc.get("_id"));
                 Document update = new Document("$set", new Document("Migrated", 1));
                 movsCollection.updateOne(filter, update);
-
                 logger.log("Movs Migration successful and MongoDB updated.");
             }
 
         } catch (Exception e) {
-            logger.log("Error Inserting in the database . " + doc.get("_id"));
+            logger.log("Error Inserting in the database: " + doc.get("_id"));
             logger.log(sqlQuery);
         }
     }

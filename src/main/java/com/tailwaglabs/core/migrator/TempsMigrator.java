@@ -35,7 +35,7 @@ import java.util.stream.IntStream;
  */
 public class TempsMigrator {
 
-    private final boolean LOGGER_ENABLED = true;
+    private final boolean LOGGER_ENABLED = false;
 
     // ini Mongo Properties
     private String mongoHost = "localhost";
@@ -191,13 +191,9 @@ public class TempsMigrator {
 
             if (cursor.hasNext()) {
                 stopTimer();
-                System.out.println("Timer Reset");
+//                System.out.println("Timer Reset");
                 startTimer();
             }
-
-            System.out.println("size " + tempsQuery.size() );
-            System.out.println("conteudo AAAAAA " + tempsQuery);
-            System.out.println("BBBBBBB " + cursor);
 
             // TODO @Rcarvalho18 - AUSENCIA DE LEITURAS
             // Começamos com um boolean a false - Indica que não há agendamento a decorrer
@@ -389,16 +385,13 @@ public class TempsMigrator {
                               doc.containsKey("Hora") &&
                               doc.containsKey("Timestamp") &&
                               !isWrongTimestamp(doc);
-
         try {
             doc.getDouble("Leitura");
             doc.getInteger("Sensor");
             doc.getLong("Timestamp");
         } catch (ClassCastException e) {
-
             return false;
         }
-
         return validFormat;
     }
 
