@@ -108,6 +108,8 @@ public class TempsMigrator {
 
     private ExperimentWatcher watcher = ExperimentWatcher.getInstance();
 
+    private List<Boolean> lastTenReadings = new ArrayList<>();
+
 
     private void run() {
         init();
@@ -217,6 +219,13 @@ public class TempsMigrator {
     public boolean persistTemp(Document doc) {
 
         Boolean isValidReading = validateReading(doc);
+        lastTenReadings.add(isValidReading);
+
+        try {
+            checkTooManyErrors(doc);
+        } catch (SQLException e) {
+            logger.log("Error connecting to MariaDB." + e);
+        }
 
         Double reading = null;
         try {
@@ -337,7 +346,7 @@ public class TempsMigrator {
     }
 
     private boolean validateReading(Document doc) {
-        boolean validFormat = doc.containsKey("Leitura") &&
+        boolean validFormat = !doc.containsKey("Leitura") &&
                               doc.containsKey("Sensor") &&
                               doc.containsKey("Hora") &&
                               doc.containsKey("Timestamp") &&
@@ -596,6 +605,38 @@ public class TempsMigrator {
 
     public void setMariadbConnection(Connection mariadbConnection) {
         this.mariadbConnection = mariadbConnection;
+    }
+
+    public void checkTooManyErrors(Document doc) throws SQLException {
+        // Minimun 10 readings to analyze
+        if(lastTenReadings.size() <= 10) {
+            return;
+        }
+
+        int sensor = doc.getInteger("Sensor");
+
+        int errorLimit = 0;
+        for(Boolean error : lastTenReadings) {
+            if(!error) {
+                errorLimit++;
+            }
+        }
+
+        lastTenReadings.remove(0);
+
+        if(errorLimit >= 5) {
+            PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+            statement.setLong(1, watcher.getIdExperiment());
+            statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+            statement.setInt(3, sensor);
+            statement.setDouble(4, doc.getDouble("Leitura"));
+            statement.setInt(5, AlertType.AVISO.getValue());
+            String message = "Sensores de temperatura registaram demasiados erros.";
+            message = String.format(message, "mínimo", sensor);
+            statement.setString(6, message);
+            statement.setInt(7, AlertSubType.SENSOR_ERRORS.getValue());
+            statement.executeUpdate();
+        }
     }
 
     public static void main(String[] args) {
