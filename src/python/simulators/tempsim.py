@@ -20,7 +20,7 @@ clientMqttMovements = mqtt.Client()
 clientMqttMovements.on_connect = on_connectMqttTemp
 clientMqttMovements.connect(host, port)
 
-prc_outlier = 0.05
+prc_outlier = 0.00
 prc_rampage = 0.00
 
 regular_temp_variation = 0.6
@@ -31,8 +31,11 @@ rampage_variation = 1.0
 outlier_value = 20.0
 outlier_variation = 10.0
 
-output_temp1 = random.uniform(15.0, 35.0)
-output_temp2 = random.uniform(15.0, 35.0)
+output_temp1 = 20
+output_temp2 = 40
+
+# output_temp1 = random.uniform(15.0, 35.0)
+# output_temp2 = random.uniform(15.0, 35.0)
 
 sensor1_rampage = False
 sensor1_rampage_direction = 1

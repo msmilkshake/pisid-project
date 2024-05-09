@@ -19,12 +19,10 @@ import java.sql.*;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.stream.IntStream;
 
 /**
  * Migrates and processes Temps sensor data: Mongo - MySQL
@@ -67,11 +65,14 @@ public class TempsMigrator {
             { Timestamp: { $gte: %d }, Migrated: { $ne: '1' } }
             """;
 
+    private final String QUERY_SQL_PROCEDURE_TEMP_VARIATION = """
+            CALL VerificacaoVariacaoBrusca(?);
+            """;
+
     private final String QUERY_SQL_INSERT_TEMP = """
             INSERT INTO medicoestemperatura(IDExperiencia, Leitura, Sensor, Hora, TimestampRegisto, isError, isOutlier)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """;
-    // TODO Investigar pq é preciso dividir por 1000
 
     private final String QUERY_SQL_INSERT_TEMP_ALERT = """ 
             INSERT INTO alerta(IDExperiencia, Hora, Sensor, Leitura, TipoAlerta, Mensagem, SubTipoAlerta)
@@ -229,7 +230,7 @@ public class TempsMigrator {
                 }
             }
             if (doc != null) {
-                currentTimestamp = System.currentTimeMillis();
+                currentTimestamp = System.currentTimeMillis() - 1000;
             }
 
             logger.log("--- Sleeping " + (TEMPS_FREQUENCY / 1000) + " seconds... ---\n");
@@ -364,9 +365,15 @@ public class TempsMigrator {
             statement.executeUpdate();
             ResultSet generatedKeys = statement.getGeneratedKeys();
 
-            if (generatedKeys.next()) {
+            if (generatedKeys.next() && isValidReading && !isOutlier ) {
                 long newId = generatedKeys.getLong(1);
-                //logger.log("Generated ID: " + newId);
+                try {
+                    PreparedStatement procedureStatement = mariadbConnection.prepareStatement(QUERY_SQL_PROCEDURE_TEMP_VARIATION);
+                    procedureStatement.setLong(1, newId);
+                    procedureStatement.execute();
+                } catch (SQLException e) {
+                    logger.log(Logger.Severity.WARNING, "Alert not inserted " + e);
+                }
             } else {
                 throw new SQLException("Creating record failed, no ID obtained.");
             }
