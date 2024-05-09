@@ -210,11 +210,11 @@ public class TempsMigrator {
                 // Se guardar com sucesso ir ao Mongo e colocar o campo deste registo com Migrated: 1
                 if (persistTemp(doc)) {
                     try {
-                        Document filter = new Document(new Document("_id", doc.get("_id"));
+                        Document filter = new Document(new Document("_id", doc.get("_id")));
                         Document update = new Document("$set", new Document("Migrated", "1"));
                         tempsCollection.updateOne(filter, update);
 
-                        logger.log("Temps Migration successful and MongoDB updated.");
+                        logger.log(Logger.Severity.INFO, "Temps Migration successful and MongoDB updated.");
                     } catch (Exception e) {
                         System.out.println("Update for document with id: " + doc.get("_id"));
                         e.printStackTrace();
@@ -294,9 +294,11 @@ public class TempsMigrator {
                 limitReached(doc);
                 sendTooManyOutliersAlert(doc);
             } catch (SQLException e) {
-                logger.log("Error connecting to MariaDB." + e);
-                e.printStackTrace();
-
+                if(e.toString().contains("Alerta duplicado")) {
+                    logger.log(e.toString());
+                } else {
+                    logger.log("Error connecting to MariaDB." + e);
+                }
             }
 
             Queue<Double> readingsQueue = sensorReadingsQueues.get(sensor);
@@ -351,7 +353,7 @@ public class TempsMigrator {
             statement.setInt(7, isOutlier ? 1 : 0);
 
 
-            System.out.println(statement.toString());
+
             statement.executeUpdate();
             ResultSet generatedKeys = statement.getGeneratedKeys();
 

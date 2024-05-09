@@ -168,7 +168,13 @@ public class ExperimentWatcher extends Thread {
                 tempsMigrator.setMariadbConnection(null);
                 movsMigrator.setMariadbConnection(null);
                 mariadbConnection = null;
-                e.printStackTrace(); // TODO - Thrown HERE!!
+                logger.log(Logger.Severity.DANGER, "Connection to Mariadb lost");
+                try {
+                    sendDataBaseInaccessible();
+                } catch (Exception ex) {
+                    logger.log("Error creating inaccessible database alert");
+                }
+
             }
         }
     }
@@ -296,5 +302,16 @@ public class ExperimentWatcher extends Thread {
         statement.executeUpdate();
         statement.close();
         System.out.printf("ALERT - MICE STOPPED FOR %d SECONDS!\n", segundos);
+    }
+
+    public void sendDataBaseInaccessible() throws SQLException {
+        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+        statement.setLong(1, watcher.getIdExperiment());
+        statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+        statement.setInt(3, AlertType.AVISO.getValue());
+        String message = "Base de dados inacessível.";
+        statement.setString(4, message);
+        statement.setInt(5, AlertSubType.DATABASE_INACCESSIBLE.getValue());
+        statement.executeUpdate();
     }
 }
