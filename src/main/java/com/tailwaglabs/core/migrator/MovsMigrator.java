@@ -284,7 +284,7 @@ public class MovsMigrator extends Thread {
             }
 
         } catch (Exception e) {
-            logger.log("Error Inserting in the database . " + e);
+            logger.log("Error Inserting in the database . " + doc.get("_id"));
             logger.log(sqlQuery);
         }
     }

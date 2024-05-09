@@ -118,6 +118,7 @@ public class TempsMigrator {
 
     private void run() {
         init();
+        startTimer();
         migrationLoop();
     }
 
@@ -184,8 +185,15 @@ public class TempsMigrator {
                 continue;
             }
 
+
             Document tempsQuery = Document.parse(String.format(QUERY_MONGO_GET_TEMPS, currentTimestamp));
             cursor = tempsCollection.find(tempsQuery).iterator();
+
+            if (cursor.hasNext()) {
+                stopTimer();
+                System.out.println("Timer Reset");
+                startTimer();
+            }
 
             System.out.println("size " + tempsQuery.size() );
             System.out.println("conteudo AAAAAA " + tempsQuery);
@@ -216,9 +224,12 @@ public class TempsMigrator {
 
                         logger.log(Logger.Severity.INFO, "Temps Migration successful and MongoDB updated.");
                     } catch (Exception e) {
+                        logger.log(Logger.Severity.WARNING, "Update for document with id:"  + doc.get("_id"));
                         System.out.println("Update for document with id: " + doc.get("_id"));
                         e.printStackTrace();
                     }
+                } else {
+                    logger.log(Logger.Severity.WARNING, "Temp persist failed");
                 }
             }
             if (doc != null) {
@@ -292,7 +303,7 @@ public class TempsMigrator {
                 isOutlier = isOutlier(doc);
                 checkLimitProximity(doc);
                 limitReached(doc);
-                sendTooManyOutliersAlert(doc);
+                // sendTooManyOutliersAlert(doc);
             } catch (SQLException e) {
                 if(e.toString().contains("Alerta duplicado")) {
                     logger.log(e.toString());
@@ -366,8 +377,8 @@ public class TempsMigrator {
             statement.close();
             return true;
         } catch (Exception e) {
-            logger.log("Error Inserting in the database. " + e);
-
+            logger.log(Logger.Severity.WARNING, "Error Inserting in the database. " + e);
+            e.printStackTrace();
             return false;
         }
     }
@@ -669,10 +680,12 @@ public class TempsMigrator {
         }
     }
 
+    // TODO Paulo - "Dar o toque"
     private TimerTask temperatureReadingsAbsence() {
         return new TimerTask() {
             @Override
             public void run() {
+                logger.log("Readings Absence (ALERT)");
                 try {
                     PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
                     statement.setLong(1, watcher.getIdExperiment());
@@ -690,6 +703,9 @@ public class TempsMigrator {
             }
         };
     }
+
+    // TODO Ruben - Variação brusca de temperatura
+
 
     private void startTimer() {
         temperatureAbsenceTask = temperatureReadingsAbsence();
