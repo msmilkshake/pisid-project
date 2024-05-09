@@ -270,9 +270,19 @@ public class MovsMigrator extends Thread {
                 experiencia, salaOrigem, salaDestino, hora, timestamp
         );
         try {
+            // Inserção no MySQL
             Statement s = mariadbConnection.createStatement();
-            s.executeUpdate(sqlQuery);
+            int rowsChanged = s.executeUpdate(sqlQuery);
             s.close();
+
+            if (rowsChanged > 0) {
+                Document filter = new Document("_id", doc.get("_id"));
+                Document update = new Document("$set", new Document("Migrated", 1));
+                movsCollection.updateOne(filter, update);
+
+                logger.log("Movs Migration successful and MongoDB updated.");
+            }
+
         } catch (Exception e) {
             logger.log("Error Inserting in the database . " + e);
             logger.log(sqlQuery);

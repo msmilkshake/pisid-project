@@ -155,10 +155,10 @@ public class TempsMigrator {
 
         } catch (SQLException e) {
             logger.log("Error connecting to MariaDB." + e);
-            
+
         } catch (IOException e) {
             logger.log("Error reading config.ini file." + e);
-            
+
         }
         currentTimestamp = System.currentTimeMillis();
     }
@@ -179,7 +179,7 @@ public class TempsMigrator {
                     Thread.sleep(TEMPS_FREQUENCY);
                 } catch (InterruptedException e) {
                     //throw new RuntimeException(e);
-                    
+
                 }
                 continue;
             }
@@ -206,9 +206,20 @@ public class TempsMigrator {
             while (cursor.hasNext()) {
                 doc = cursor.next();
                 logger.log(doc);
-                boolean persistSuccess = persistTemp(doc);
-                // TODO Ruben
+
                 // Se guardar com sucesso ir ao Mongo e colocar o campo deste registo com Migrated: 1
+                if (persistTemp(doc)) {
+                    try {
+                        Document filter = new Document(new Document("_id", doc.get("_id"));
+                        Document update = new Document("$set", new Document("Migrated", "1"));
+                        tempsCollection.updateOne(filter, update);
+
+                        logger.log("Temps Migration successful and MongoDB updated.");
+                    } catch (Exception e) {
+                        System.out.println("Update for document with id: " + doc.get("_id"));
+                        e.printStackTrace();
+                    }
+                }
             }
             if (doc != null) {
                 currentTimestamp = System.currentTimeMillis();
@@ -220,7 +231,7 @@ public class TempsMigrator {
                 Thread.sleep(TEMPS_FREQUENCY);
             } catch (InterruptedException e) {
                 //throw new RuntimeException(e);
-                
+
             }
         }
     }
@@ -271,6 +282,7 @@ public class TempsMigrator {
                     null;
         } catch (Exception e) {
             logger.log("Could not create java date because \"Hora\" is invalid. " + e);
+            e.printStackTrace();
         }
 
         boolean isOutlier = false;
@@ -283,7 +295,8 @@ public class TempsMigrator {
                 sendTooManyOutliersAlert(doc);
             } catch (SQLException e) {
                 logger.log("Error connecting to MariaDB." + e);
-                
+                e.printStackTrace();
+
             }
 
             Queue<Double> readingsQueue = sensorReadingsQueues.get(sensor);
@@ -337,6 +350,8 @@ public class TempsMigrator {
 
             statement.setInt(7, isOutlier ? 1 : 0);
 
+
+            System.out.println(statement.toString());
             statement.executeUpdate();
             ResultSet generatedKeys = statement.getGeneratedKeys();
 
@@ -350,7 +365,7 @@ public class TempsMigrator {
             return true;
         } catch (Exception e) {
             logger.log("Error Inserting in the database. " + e);
-            
+
             return false;
         }
     }
@@ -367,7 +382,7 @@ public class TempsMigrator {
             doc.getInteger("Sensor");
             doc.getLong("Timestamp");
         } catch (ClassCastException e) {
-            
+
             return false;
         }
 
@@ -589,7 +604,7 @@ public class TempsMigrator {
         try {
             hourFromMongo = LocalDateTime.parse(hourFromMongoString.replace(" ", "T"));
         } catch (DateTimeParseException e) {
-            
+
             return false;
         }
 
