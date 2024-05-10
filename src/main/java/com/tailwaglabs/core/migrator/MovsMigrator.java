@@ -90,7 +90,7 @@ public class MovsMigrator extends Thread {
     private HashMap<Integer, Integer> rooms_population = new HashMap<>();
 
     private final String QUERY_MONGO_GET_MOVS = """
-            { Timestamp: { $gte: %d }, Migrated: { $ne: '1' } }
+            { Timestamp: { $gte: %d }, Migrated: { $ne: 1 } }
             """;
 
     private final String QUERY_SQL_INSERT_ALERT = """ 
@@ -156,7 +156,7 @@ public class MovsMigrator extends Thread {
             if (mariadbConnection == null) {
                 try {
                     logger.log("Not connected to MariaDB.");
-//                    logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); REINSTATE
+                    logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
                     //noinspection BusyWait
                     Thread.sleep(MOVS_FREQUENCY);
                 } catch (InterruptedException e) {
@@ -164,12 +164,10 @@ public class MovsMigrator extends Thread {
                 }
                 continue;
             }
-
             String query = String.format(QUERY_MONGO_GET_MOVS, movsTimestamp);
             FindIterable<Document> results = movsCollection.find(BsonDocument.parse(query));
             Document doc = null;
             Iterator<Document> cursor = results.iterator();
-
             while (cursor.hasNext()) {
                 doc = cursor.next();
                 int from_room = doc.getInteger("SalaOrigem");
@@ -215,13 +213,12 @@ public class MovsMigrator extends Thread {
                         persistMicePopulation(entry.getKey(), entry.getValue());
                     }
                 }
-                System.out.println("passa aqui 2x pq?"); //REMOVE
                 logger.log("Mice in rooms: " + rooms_population);
             }
             if (doc != null) {
                 movsTimestamp = System.currentTimeMillis() - 1000;
             }
-//            logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); REINSTATE
+//            logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); //REINSTATE
             try {
                 Thread.sleep(MOVS_FREQUENCY);
             } catch (InterruptedException e) {
@@ -284,8 +281,6 @@ public class MovsMigrator extends Thread {
         LocalDateTime hora = LocalDateTime.parse(doc.getString("Hora").replace(" ", "T"));
         long timestamp = doc.getLong("Timestamp");
         int isError = validateReading(doc) ? 0 : 1; // if 0 there is no error
-        System.out.println("IsERROR: " + isError); // REMOVE
-
         String sqlQuery = String.format("" +
                         "INSERT INTO medicoespassagens(IDExperiencia, SalaOrigem, SalaDestino, Hora, TimestampRegisto, IsError)\n" +
                         "VALUES (%d, %d, %d, '%s', FROM_UNIXTIME(%d / 1000), %d)",
