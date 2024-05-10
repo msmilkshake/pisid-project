@@ -15,9 +15,11 @@ import org.bson.Document;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.sql.*;
+import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.Date;
 
 /**
  * Migrates and processes Movs sensor data: Mongo - MySQL
@@ -150,7 +152,6 @@ public class MovsMigrator extends Thread {
         }
         startTimer(); // timer to keep track of mice movement
         while (TempsMigrator.getExperimentRunning()) {
-
             // Connection lost...
             if (mariadbConnection == null) {
                 try {
@@ -171,9 +172,6 @@ public class MovsMigrator extends Thread {
 
             while (cursor.hasNext()) {
                 doc = cursor.next();
-//                System.out.println("DEBUG timestamp: " + doc.getLong("Timestamp")); // REMOVE OBJ colocar isError a 0 / 1
-//                System.out.println(validateReading(doc)); HERE
-
                 int from_room = doc.getInteger("SalaOrigem");
                 int to_room = doc.getInteger("SalaDestino");
                 if (from_room == to_room || topology[from_room][to_room] == 0 || rooms_population.get(from_room) == 0) {
@@ -217,10 +215,11 @@ public class MovsMigrator extends Thread {
                         persistMicePopulation(entry.getKey(), entry.getValue());
                     }
                 }
+                System.out.println("passa aqui 2x pq?"); //REMOVE
                 logger.log("Mice in rooms: " + rooms_population);
             }
             if (doc != null) {
-                movsTimestamp = System.currentTimeMillis();
+                movsTimestamp = System.currentTimeMillis() - 1000;
             }
 //            logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); REINSTATE
             try {
@@ -231,17 +230,22 @@ public class MovsMigrator extends Thread {
         }
     }
     private boolean validateReading(Document doc) { // returns true with valid readings
-        long currentTimeMillis = Instant.now().toEpochMilli();
-        long fifteenMinutesAgo = currentTimeMillis - (15 * 60 * 1000);
+        String dateFromMongo = doc.getString("Hora");
+        SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSSSSS");
+        long hora = 0;
+        try {
+            Date date = formatter.parse(dateFromMongo);
+            hora = date.getTime();
+        } catch (Exception e) {
+            logger.log(e);
+        }
         long timeStamp = doc.getLong("Timestamp");
-        System.out.println("TS: " + timeStamp + "\n15: " + fifteenMinutesAgo);
-        System.out.println("dif: " + (timeStamp -fifteenMinutesAgo));
-
+        long fifteenMinutesAgo = timeStamp - (15 * 60 * 1000);
         return  doc.containsKey("SalaDestino") &&
                 doc.containsKey("SalaOrigem") &&
                 doc.containsKey("Hora") &&
                 doc.containsKey("Timestamp") &&
-                (timeStamp > fifteenMinutesAgo);
+                (hora > fifteenMinutesAgo);
     }
 
     private void persistInitMicePopulation(int nbMice, long exp) { // init the 10 rooms in relational
@@ -275,18 +279,17 @@ public class MovsMigrator extends Thread {
     }
 
     private void persistMov(Document doc, long experiencia) {
-        System.out.println("HERE!!!");
         int salaOrigem = doc.getInteger("SalaOrigem");
         int salaDestino = doc.getInteger("SalaDestino");
         LocalDateTime hora = LocalDateTime.parse(doc.getString("Hora").replace(" ", "T"));
         long timestamp = doc.getLong("Timestamp");
         int isError = validateReading(doc) ? 0 : 1; // if 0 there is no error
-        System.out.println("IsERROR: " + isError);
+        System.out.println("IsERROR: " + isError); // REMOVE
 
-        String sqlQuery = String.format(
-                        "INSERT INTO medicoespassagens(IDExperiencia, SalaOrigem, SalaDestino, Hora, TimestampRegisto)" +
-                        "VALUES (%d, %d, %d, '%s', FROM_UNIXTIME(%d)",
-                experiencia, salaOrigem, salaDestino, hora, timestamp
+        String sqlQuery = String.format("" +
+                        "INSERT INTO medicoespassagens(IDExperiencia, SalaOrigem, SalaDestino, Hora, TimestampRegisto, IsError)\n" +
+                        "VALUES (%d, %d, %d, '%s', FROM_UNIXTIME(%d / 1000), %d)",
+                experiencia, salaOrigem, salaDestino, hora, timestamp, isError
         );
         try {
             // Inserção no MySQL

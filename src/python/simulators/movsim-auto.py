@@ -16,11 +16,11 @@ invalid_reading_chance = 0.05
 simultaneous_moves = 4
 
 adjacency_mask = [  # rows: from, cols: to
-    [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 1, 1, 1, 0, 0, 0, 0, 0],
+    [0, 1, 1, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 1, 1, 0, 0, 0, 0, 0],
     [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 1, 1, 0, 0, 0],
+    [0, 0, 1, 0, 0, 1, 1, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
     [0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
@@ -43,11 +43,12 @@ room_mouses = {
 
 correct_rooms = [
     {"salaa": 1, "salab": 2},
-    {"salaa": 2, "salab": 3},
+    {"salaa": 1, "salab": 3},
     {"salaa": 2, "salab": 4},
     {"salaa": 2, "salab": 5},
     {"salaa": 3, "salab": 2},
     {"salaa": 4, "salab": 5},
+    {"salaa": 5, "salab": 3},
     {"salaa": 5, "salab": 6},
     {"salaa": 5, "salab": 7},
     {"salaa": 6, "salab": 8},
@@ -67,7 +68,7 @@ incorrect_rooms = [
     {"salaa": 5, "salab": 8},
     {"salaa": 6, "salab": 9},
     {"salaa": 7, "salab": 10},
-    {"salaa": 8, "salab": 10},
+    {"salaa": 8, "salab": 3},
     {"salaa": 4, "salab": 7},
     {"salaa": 6, "salab": 10}
 ]
