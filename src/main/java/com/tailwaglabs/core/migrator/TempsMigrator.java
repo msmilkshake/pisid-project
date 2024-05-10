@@ -33,7 +33,7 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 public class TempsMigrator {
 
-    private final boolean LOGGER_ENABLED = false;
+    private final boolean LOGGER_ENABLED = true;
 
     // ini Mongo Properties
     private String mongoHost = "localhost";
@@ -180,8 +180,7 @@ public class TempsMigrator {
                     //noinspection BusyWait
                     Thread.sleep(TEMPS_FREQUENCY);
                 } catch (InterruptedException e) {
-                    //throw new RuntimeException(e);
-
+                    logger.log(e);
                 }
                 continue;
             }
@@ -192,19 +191,9 @@ public class TempsMigrator {
 
             if (cursor.hasNext()) {
                 stopTimer();
-//                System.out.println("Timer Reset");
+                //System.out.println("Timer Reset");
                 startTimer();
             }
-
-            // TODO @Rcarvalho18 - AUSENCIA DE LEITURAS
-            // Começamos com um boolean a false - Indica que não há agendamento a decorrer
-            // Se chegarem 0 resultados na tempsQuery && se a flag estiver a false
-            // Então agendar tarefa de ausencia de leituras e colocar a flag a true.
-            // Se antes da tarefa agendada executar chegarem leituras, Cancelar o agendamento e colocar as duas flags a false
-            // Após os 15 segundos continua sempre a lançar o alerta pq o SPAM é tratado na BD.
-
-            // A tarefa coloca uma segunda flag a true.
-            // Tratamos do alerta aqui neste sítio se a segunda flag estiver a true.
 
 
             Document doc = null;
@@ -221,7 +210,7 @@ public class TempsMigrator {
 
                         logger.log(Logger.Severity.INFO, "Temps Migration successful and MongoDB updated.");
                     } catch (Exception e) {
-                        logger.log(Logger.Severity.WARNING, "Update for document with id:"  + doc.get("_id"));
+                        logger.log(Logger.Severity.WARNING, "Update for document with id:" + doc.get("_id"));
                         System.out.println("Update for document with id: " + doc.get("_id"));
                         e.printStackTrace();
                     }
@@ -229,6 +218,7 @@ public class TempsMigrator {
                     logger.log(Logger.Severity.WARNING, "Temp persist failed");
                 }
             }
+
             if (doc != null) {
                 currentTimestamp = System.currentTimeMillis() - 1000;
             }
@@ -238,8 +228,7 @@ public class TempsMigrator {
                 //noinspection BusyWait
                 Thread.sleep(TEMPS_FREQUENCY);
             } catch (InterruptedException e) {
-                //throw new RuntimeException(e);
-
+                logger.log(e);
             }
         }
     }
@@ -298,11 +287,13 @@ public class TempsMigrator {
         if (isExperimentRunning && isValidReading) {
             try {
                 isOutlier = isOutlier(doc);
-                checkLimitProximity(doc);
-                limitReached(doc);
-                // sendTooManyOutliersAlert(doc);
+                if (!isOutlier) {
+                    checkLimitProximity(doc);
+                    limitReached(doc);
+                }
+                 sendTooManyOutliersAlert(doc);
             } catch (SQLException e) {
-                if(e.toString().contains("Alerta duplicado")) {
+                if (e.toString().contains("Alerta duplicado")) {
                     logger.log(e.toString());
                 } else {
                     logger.log("Error connecting to MariaDB." + e);
@@ -361,11 +352,10 @@ public class TempsMigrator {
             statement.setInt(7, isOutlier ? 1 : 0);
 
 
-
             statement.executeUpdate();
             ResultSet generatedKeys = statement.getGeneratedKeys();
 
-            if (generatedKeys.next() && isValidReading && !isOutlier ) {
+            if (generatedKeys.next() && isValidReading && !isOutlier) {
                 long newId = generatedKeys.getLong(1);
                 try {
                     PreparedStatement procedureStatement = mariadbConnection.prepareStatement(QUERY_SQL_PROCEDURE_TEMP_VARIATION);
@@ -603,7 +593,7 @@ public class TempsMigrator {
                 statement.close();
             }
         } catch (SQLException e) {
-            logger.log( Logger.Severity.WARNING, e.getMessage() + " Tipo de alerta: " + AlertType.INFORMATIVO.toString());
+            logger.log(Logger.Severity.WARNING, e.getMessage() + " Tipo de alerta: " + AlertType.INFORMATIVO.toString());
         }
     }
 
@@ -646,20 +636,20 @@ public class TempsMigrator {
     }
 
     public void checkTooManyErrors() throws SQLException {
-        if(lastTenReadings.size() <= 10) {
+        if (lastTenReadings.size() <= 10) {
             return;
         }
 
         int errorLimit = 0;
-        for(Boolean error : lastTenReadings) {
-            if(!error) {
+        for (Boolean error : lastTenReadings) {
+            if (!error) {
                 errorLimit++;
             }
         }
 
         lastTenReadings.remove(0);
 
-        if(errorLimit >= 5) {
+        if (errorLimit >= 5) {
             logger.log(Logger.Severity.DANGER, "Sending too many errors Alert");
             try {
                 PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
@@ -672,7 +662,7 @@ public class TempsMigrator {
                 statement.setString(6, message);
                 statement.setInt(7, AlertSubType.SENSOR_ERRORS.getValue());
                 statement.executeUpdate();
-            } catch(Exception e) {
+            } catch (Exception e) {
                 logger.log(Logger.Severity.WARNING, "Error persisting errors alert");
             }
 

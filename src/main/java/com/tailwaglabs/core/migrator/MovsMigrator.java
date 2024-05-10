@@ -11,6 +11,7 @@ import com.tailwaglabs.core.ExperimentWatcher;
 import com.tailwaglabs.core.Logger;
 import org.bson.BsonDocument;
 import org.bson.Document;
+
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.sql.*;
@@ -54,7 +55,7 @@ public class MovsMigrator extends Thread {
 
     Logger logger = null;
 
-    long movsTimestamp = System.currentTimeMillis();
+    long movsTimestamp = System.currentTimeMillis() - 60 * 1000; // To get movement readings that might happen seconds before this thread starts running
     private List<Boolean> lastTenReadings = new ArrayList<>();
 
     private TimerTask createMiceStoppedTask() {
@@ -84,6 +85,7 @@ public class MovsMigrator extends Thread {
         timer = null;
         miceStoppedTask = null;
     }
+
     private final int MOVS_FREQUENCY = 1 * 1000; // 1 second
 
     private HashMap<Integer, Integer> rooms_population = new HashMap<>();
@@ -217,7 +219,7 @@ public class MovsMigrator extends Thread {
             if (doc != null) {
                 movsTimestamp = System.currentTimeMillis() - 1000;
             }
-//            logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); //REINSTATE
+            //logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); //REINSTATE
             try {
                 Thread.sleep(MOVS_FREQUENCY);
             } catch (InterruptedException e) {
@@ -225,6 +227,7 @@ public class MovsMigrator extends Thread {
             }
         }
     }
+
     private boolean validateReading(Document doc) { // returns true with valid readings
         String dateFromMongo = doc.getString("Hora");
         SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
@@ -238,25 +241,25 @@ public class MovsMigrator extends Thread {
         long timeStamp = doc.getLong("Timestamp");
         long fifteenMinutesAgo = timeStamp - (15 * 60 * 1000);
         return doc.containsKey("SalaDestino") &&
-                doc.containsKey("SalaOrigem") &&
-                doc.containsKey("Hora") &&
-                doc.containsKey("Timestamp") &&
-                (hora > fifteenMinutesAgo) && // not valid because reading was more than 15 minutes ago
-                (hora < timeStamp); // not valid because reading was in the future
+               doc.containsKey("SalaOrigem") &&
+               doc.containsKey("Hora") &&
+               doc.containsKey("Timestamp") &&
+               (hora > fifteenMinutesAgo) && // not valid because reading was more than 15 minutes ago
+               (hora < timeStamp); // not valid because reading was in the future
     }
 
     public void checkTooManyErrors() throws SQLException {
-        if(lastTenReadings.size() <= 10) {
+        if (lastTenReadings.size() <= 10) {
             return;
         }
         int errorLimit = 0;
-        for(Boolean error : lastTenReadings) {
-            if(!error) {
+        for (Boolean error : lastTenReadings) {
+            if (!error) {
                 errorLimit++;
             }
         }
         lastTenReadings.remove(0);
-        if(errorLimit >= 5) {
+        if (errorLimit >= 5) {
             logger.log(Logger.Severity.DANGER, "Sending too many errors Alert");
             try {
                 PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
@@ -270,7 +273,7 @@ public class MovsMigrator extends Thread {
                 statement.setInt(7, AlertSubType.SENSOR_ERRORS.getValue());
                 statement.setNull(8, Types.INTEGER);
                 statement.executeUpdate();
-            } catch(Exception e) {
+            } catch (Exception e) {
                 logger.log(Logger.Severity.WARNING, "Error persisting errors alert");
             }
         }
@@ -280,12 +283,17 @@ public class MovsMigrator extends Thread {
         String sqlQuery = "";
         try {
             Statement s = mariadbConnection.createStatement();
-            sqlQuery = String.format("" + "INSERT INTO salas_ratos(sala, ratos, experiencia)\n" +
-                    "VALUES (%d, %d, %d)", 1, nbMice, exp);
+            sqlQuery = String.format("""
+                    INSERT INTO salas_ratos(sala, ratos, experiencia)
+                    "VALUES (%d, %d, %d)
+                    """, 1, nbMice, exp);
             s.executeUpdate(sqlQuery);
-            for (int sala = 2; sala <= 10 ; sala++) {
-                sqlQuery = String.format("" + "INSERT INTO salas_ratos(sala, ratos, experiencia)\n" +
-                        "VALUES (%d, %d, %d)", sala, 0, exp);
+
+            for (int sala = 2; sala <= 10; sala++) {
+                sqlQuery = String.format("""
+                        INSERT INTO salas_ratos(sala, ratos, experiencia)
+                        VALUES (%d, %d, %d)
+                        """, sala, 0, exp);
                 s.executeUpdate(sqlQuery);
             }
             s.close();
@@ -294,8 +302,11 @@ public class MovsMigrator extends Thread {
             logger.log(sqlQuery);
         }
     }
+
     private void persistMicePopulation(int room, int nbMice) {
-        String sqlQuery = String.format("" + "UPDATE salas_ratos SET ratos = %d WHERE sala = %d", nbMice, room);
+        String sqlQuery = String.format("""
+                UPDATE salas_ratos SET ratos = %d WHERE sala = %d
+                """, nbMice, room);
         try {
             Statement s = mariadbConnection.createStatement();
             s.executeUpdate(sqlQuery);
@@ -315,16 +326,17 @@ public class MovsMigrator extends Thread {
         Boolean isValidReading = (isError == 0);
         logger.log("Valid reading: " + isValidReading);
         lastTenReadings.add(isValidReading);
+
         try {
             checkTooManyErrors();
         } catch (SQLException e) {
             logger.log("Error connecting to MariaDB." + e);
         }
-        String sqlQuery = String.format("" +
-                        "INSERT INTO medicoespassagens(IDExperiencia, SalaOrigem, SalaDestino, Hora, TimestampRegisto, IsError)\n" +
-                        "VALUES (%d, %d, %d, '%s', FROM_UNIXTIME(%d / 1000), %d)",
-                experiencia, salaOrigem, salaDestino, hora, timestamp, isError
-        );
+        String sqlQuery = String.format("""
+                INSERT INTO medicoespassagens(IDExperiencia, SalaOrigem, SalaDestino, Hora, TimestampRegisto, IsError)
+                VALUES (%d, %d, %d, '%s', FROM_UNIXTIME(%d / 1000), %d)
+                """, experiencia, salaOrigem, salaDestino, hora, timestamp, isError);
+
         try {
             // Inserção no MySQL
             Statement s = mariadbConnection.createStatement();
@@ -336,7 +348,6 @@ public class MovsMigrator extends Thread {
                 movsCollection.updateOne(filter, update);
                 logger.log("Movs Migration successful and MongoDB updated.");
             }
-
         } catch (Exception e) {
             logger.log("Error Inserting in the database: " + doc.get("_id"));
             logger.log(sqlQuery);
