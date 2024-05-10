@@ -55,6 +55,7 @@ public class MovsMigrator extends Thread {
     Logger logger = null;
 
     long movsTimestamp = System.currentTimeMillis();
+    private List<Boolean> lastTenReadings = new ArrayList<>();
 
     private TimerTask createMiceStoppedTask() {
         return new TimerTask() {
@@ -236,15 +237,43 @@ public class MovsMigrator extends Thread {
         }
         long timeStamp = doc.getLong("Timestamp");
         long fifteenMinutesAgo = timeStamp - (15 * 60 * 1000);
-        System.out.println("Hora: " + hora);
-        System.out.println("TimS: " + timeStamp);
-        System.out.println("15ma: " + fifteenMinutesAgo);
         return doc.containsKey("SalaDestino") &&
                 doc.containsKey("SalaOrigem") &&
                 doc.containsKey("Hora") &&
                 doc.containsKey("Timestamp") &&
-                (hora > fifteenMinutesAgo) &&
-                (hora < timeStamp);
+                (hora > fifteenMinutesAgo) && // not valid because reading was more than 15 minutes ago
+                (hora < timeStamp); // not valid because reading was in the future
+    }
+
+    public void checkTooManyErrors() throws SQLException {
+        if(lastTenReadings.size() <= 10) {
+            return;
+        }
+        int errorLimit = 0;
+        for(Boolean error : lastTenReadings) {
+            if(!error) {
+                errorLimit++;
+            }
+        }
+        lastTenReadings.remove(0);
+        if(errorLimit >= 5) {
+            logger.log(Logger.Severity.DANGER, "Sending too many errors Alert");
+            try {
+                PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+                statement.setLong(1, watcher.getIdExperiment());
+                statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+                statement.setNull(3, Types.INTEGER);
+                statement.setNull(4, Types.DOUBLE);
+                statement.setInt(5, AlertType.AVISO.getValue());
+                String message = "Sensores de movimento registaram demasiados erros.";
+                statement.setString(6, message);
+                statement.setInt(7, AlertSubType.SENSOR_ERRORS.getValue());
+                statement.setNull(8, Types.INTEGER);
+                statement.executeUpdate();
+            } catch(Exception e) {
+                logger.log(Logger.Severity.WARNING, "Error persisting errors alert");
+            }
+        }
     }
 
     private void persistInitMicePopulation(int nbMice, long exp) { // init the 10 rooms in relational
@@ -283,6 +312,14 @@ public class MovsMigrator extends Thread {
         LocalDateTime hora = LocalDateTime.parse(doc.getString("Hora").replace(" ", "T"));
         long timestamp = doc.getLong("Timestamp");
         int isError = validateReading(doc) ? 0 : 1; // if 0 there is no error
+        Boolean isValidReading = (isError == 0);
+        logger.log("Valid reading: " + isValidReading);
+        lastTenReadings.add(isValidReading);
+        try {
+            checkTooManyErrors();
+        } catch (SQLException e) {
+            logger.log("Error connecting to MariaDB." + e);
+        }
         String sqlQuery = String.format("" +
                         "INSERT INTO medicoespassagens(IDExperiencia, SalaOrigem, SalaDestino, Hora, TimestampRegisto, IsError)\n" +
                         "VALUES (%d, %d, %d, '%s', FROM_UNIXTIME(%d / 1000), %d)",
