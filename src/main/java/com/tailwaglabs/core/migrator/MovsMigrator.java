@@ -11,12 +11,10 @@ import com.tailwaglabs.core.ExperimentWatcher;
 import com.tailwaglabs.core.Logger;
 import org.bson.BsonDocument;
 import org.bson.Document;
-
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.sql.*;
 import java.text.SimpleDateFormat;
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.Date;
@@ -228,7 +226,7 @@ public class MovsMigrator extends Thread {
     }
     private boolean validateReading(Document doc) { // returns true with valid readings
         String dateFromMongo = doc.getString("Hora");
-        SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSSSSS");
+        SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         long hora = 0;
         try {
             Date date = formatter.parse(dateFromMongo);
@@ -238,11 +236,15 @@ public class MovsMigrator extends Thread {
         }
         long timeStamp = doc.getLong("Timestamp");
         long fifteenMinutesAgo = timeStamp - (15 * 60 * 1000);
-        return  doc.containsKey("SalaDestino") &&
+        System.out.println("Hora: " + hora);
+        System.out.println("TimS: " + timeStamp);
+        System.out.println("15ma: " + fifteenMinutesAgo);
+        return doc.containsKey("SalaDestino") &&
                 doc.containsKey("SalaOrigem") &&
                 doc.containsKey("Hora") &&
                 doc.containsKey("Timestamp") &&
-                (hora > fifteenMinutesAgo);
+                (hora > fifteenMinutesAgo) &&
+                (hora < timeStamp);
     }
 
     private void persistInitMicePopulation(int nbMice, long exp) { // init the 10 rooms in relational
