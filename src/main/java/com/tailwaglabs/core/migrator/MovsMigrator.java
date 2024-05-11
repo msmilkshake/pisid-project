@@ -285,7 +285,7 @@ public class MovsMigrator extends Thread {
             Statement s = mariadbConnection.createStatement();
             sqlQuery = String.format("""
                     INSERT INTO salas_ratos(sala, ratos, experiencia)
-                    "VALUES (%d, %d, %d)
+                    VALUES (%d, %d, %d)
                     """, 1, nbMice, exp);
             s.executeUpdate(sqlQuery);
 
