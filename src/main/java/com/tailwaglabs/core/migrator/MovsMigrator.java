@@ -142,14 +142,15 @@ public class MovsMigrator extends Thread {
 
     private void migrationLoop() throws SQLException {
         int[][] topology = topologyService.getTopology(); // get labyrinth topology from relational
+        int nbRooms = topology.length - 1;
         int miceLimit = watcher.getMiceLimit();
         int startingMiceNumber = watcher.getStartingMiceNumber();
         topologyService.show_matrix(topology); // show labyrinth topology retrieved from relational
         rooms_population.put(1, startingMiceNumber); // set starting mice number in 1st room (HASHMAP)
-        for (int i = 2; i <= 10; i++) { // remaining 9 rooms with 0 mice (HASHMAP)
+        for (int i = 2; i <= 15; i++) { // fills 15 rooms with 0 mice (HASHMAP) - just in case ...
             rooms_population.put(i, 0);
         }
-        persistInitMicePopulation(startingMiceNumber, watcher.getIdExperiment());
+        persistInitMicePopulation(startingMiceNumber, watcher.getIdExperiment(), nbRooms);
         startTimer(); // timer to keep track of mice movement
         while (TempsMigrator.getExperimentRunning()) {
             // Connection lost...
@@ -169,31 +170,18 @@ public class MovsMigrator extends Thread {
             Document doc = null;
             Iterator<Document> cursor = results.iterator();
             while (cursor.hasNext()) {
+                boolean illegalMovement = false;
                 doc = cursor.next();
                 int from_room = doc.getInteger("SalaOrigem");
                 int to_room = doc.getInteger("SalaDestino");
-                // TODO
-                if (from_room == to_room || topology[from_room][to_room] == 0 || rooms_population.get(from_room) == 0) {
-                    String message = "Movimento ilegal detetado entre a sala %d e a sala %d.";
-                    message = String.format(message, from_room, to_room);
-                    PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
-                    statement.setLong(1, watcher.getIdExperiment());
-                    statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
-                    statement.setInt(3, from_room);
-                    statement.setInt(4, to_room);
-                    statement.setInt(5, AlertType.AVISO.getValue());
-                    statement.setString(6, message);
-                    statement.setInt(7, AlertSubType.ILLEGAL_MOVEMENT.getValue());
-                    statement.setNull(8, Types.NULL);
-                    statement.executeUpdate();
-                    statement.close();
-                    logger.log("ALERT: invalid movement!");
+                if (from_room > nbRooms || to_room > nbRooms || from_room == to_room || topology[from_room][to_room] == 0 || rooms_population.get(from_room) == 0) {
+                    invalidMovement(from_room, to_room);
+                    illegalMovement = true;
                 } else {  // movement can be performed
                     stopTimer();  // reset timer to keep track of mice movement
                     startTimer(); // reset timer to keep track of mice movement
                     rooms_population.put(to_room, rooms_population.get(to_room) + 1);
                     rooms_population.put(from_room, rooms_population.get(from_room) - 1);
-                    persistMov(doc, watcher.getIdExperiment());
                     if (rooms_population.get(to_room) >= miceLimit) { // Alert if mice number exceeded limit
                         String message = "Excesso de ratos na Sala %d.";
                         message = String.format(message, to_room);
@@ -214,6 +202,7 @@ public class MovsMigrator extends Thread {
                         persistMicePopulation(entry.getKey(), entry.getValue(), watcher.getIdExperiment());
                     }
                 }
+                persistMov(doc, watcher.getIdExperiment(), illegalMovement);
                 logger.log("Mice in rooms: " + rooms_population);
             }
             if (doc != null) {
@@ -225,6 +214,27 @@ public class MovsMigrator extends Thread {
             } catch (InterruptedException e) {
                 throw new RuntimeException(e);
             }
+        }
+    }
+
+    private void invalidMovement(int from_room, int to_room) {
+        try {
+            String message = "Movimento ilegal detetado entre a sala %d e a sala %d.";
+            message = String.format(message, from_room, to_room);
+            PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+            statement.setLong(1, watcher.getIdExperiment());
+            statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+            statement.setInt(3, from_room);
+            statement.setInt(4, to_room);
+            statement.setInt(5, AlertType.AVISO.getValue());
+            statement.setString(6, message);
+            statement.setInt(7, AlertSubType.ILLEGAL_MOVEMENT.getValue());
+            statement.setNull(8, Types.NULL);
+            statement.executeUpdate();
+            statement.close();
+            logger.log("ALERT: invalid movement!");
+        } catch (Exception e) {
+            logger.log(e);
         }
     }
 
@@ -279,7 +289,7 @@ public class MovsMigrator extends Thread {
         }
     }
 
-    private boolean existsExperience(long exp) {
+    private boolean existsExperience(long exp, int nbRooms) {
         int nbRows = 0;
         try {
             Statement s = mariadbConnection.createStatement();
@@ -290,13 +300,13 @@ public class MovsMigrator extends Thread {
         } catch (Exception e) {
             logger.log("Error querying database . " + e);
         }
-        return nbRows == 10;
+        return nbRows == nbRooms;
     }
 
-    private void persistInitMicePopulation(int nbMice, long exp) { // init the 10 rooms in relational
+    private void persistInitMicePopulation(int nbMice, long exp, int nbRooms) { // init the rooms in relational
         String sqlInsert = "";
         String sqlUpdate = "";
-        boolean existsExperience = existsExperience(exp);
+        boolean existsExperience = existsExperience(exp, nbRooms);
         try {
             Statement s = mariadbConnection.createStatement();
             sqlInsert = String.format("""
@@ -312,7 +322,7 @@ public class MovsMigrator extends Thread {
             } else {
                 s.executeUpdate(sqlInsert);
             }
-            for (int sala = 2; sala <= 10; sala++) { // TODO VER ESTA LINHA
+            for (int sala = 2; sala <= nbRooms; sala++) {
                 sqlInsert = String.format("""
                         INSERT INTO salas_ratos(sala, ratos, experiencia)
                         VALUES (%d, 0, %d)
@@ -349,13 +359,16 @@ public class MovsMigrator extends Thread {
         }
     }
 
-    private void persistMov(Document doc, long experiencia) {
+    private void persistMov(Document doc, long experiencia, boolean illegalMovement) {
         int salaOrigem = doc.getInteger("SalaOrigem");
         int salaDestino = doc.getInteger("SalaDestino");
         LocalDateTime hora = LocalDateTime.parse(doc.getString("Hora").replace(" ", "T"));
         long timestamp = doc.getLong("Timestamp");
         int isError = validateReading(doc) ? 0 : 1; // if 0 there is no error
         Boolean isValidReading = (isError == 0);
+        if (illegalMovement) {
+            isValidReading = false;
+        }
         logger.log("Valid reading: " + isValidReading);
         lastTenReadings.add(isValidReading);
         try {
