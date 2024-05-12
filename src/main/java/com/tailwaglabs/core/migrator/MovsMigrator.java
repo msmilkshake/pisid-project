@@ -311,7 +311,7 @@ public class MovsMigrator extends Thread {
             } else {
                 s.executeUpdate(sqlInsert);
             }
-            for (int sala = 2; sala <= 10; sala++) {
+            for (int sala = 2; sala <= 10; sala++) { // VER ESTA LINHA
                 sqlInsert = String.format("""
                         INSERT INTO salas_ratos(sala, ratos, experiencia)
                         VALUES (%d, 0, %d)

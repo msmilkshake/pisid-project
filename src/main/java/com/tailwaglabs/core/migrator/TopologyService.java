@@ -41,7 +41,11 @@ public class TopologyService {
         while (resultSet.next()) {
             int a = resultSet.getInt("salaa");
             int b = resultSet.getInt("salab");
-            topology[a][b] = 1;  // load adjacency matrix
+            try {
+                topology[a][b] = 1;  // load adjacency matrix
+            } catch (ArrayIndexOutOfBoundsException e) { // deals with anomalous changes in cloud db
+//                logger.log("Load topology: " + e);
+            }
         }
         resultSet.close();
     }
