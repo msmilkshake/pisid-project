@@ -147,7 +147,7 @@ public class MovsMigrator extends Thread {
         int startingMiceNumber = watcher.getStartingMiceNumber();
         topologyService.show_matrix(topology); // show labyrinth topology retrieved from relational
         rooms_population.put(1, startingMiceNumber); // set starting mice number in 1st room (HASHMAP)
-        for (int i = 2; i <= 15; i++) { // fills 15 rooms with 0 mice (HASHMAP) - just in case ...
+        for (int i = 2; i <= nbRooms; i++) { // fills remaining rooms with 0 mice (HASHMAP)
             rooms_population.put(i, 0);
         }
         persistInitMicePopulation(startingMiceNumber, watcher.getIdExperiment(), nbRooms);
@@ -208,7 +208,7 @@ public class MovsMigrator extends Thread {
             if (doc != null) {
                 movsTimestamp = System.currentTimeMillis() - 1000;
             }
-            //logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n"); //REINSTATE
+            logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
             try {
                 Thread.sleep(MOVS_FREQUENCY);
             } catch (InterruptedException e) {
