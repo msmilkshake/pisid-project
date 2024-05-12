@@ -172,8 +172,9 @@ public class MovsMigrator extends Thread {
                 doc = cursor.next();
                 int from_room = doc.getInteger("SalaOrigem");
                 int to_room = doc.getInteger("SalaDestino");
+                // TODO
                 if (from_room == to_room || topology[from_room][to_room] == 0 || rooms_population.get(from_room) == 0) {
-                    String message = "Movimento ilegal detetado entre a Sala %d e a sala %d.";
+                    String message = "Movimento ilegal detetado entre a sala %d e a sala %d.";
                     message = String.format(message, from_room, to_room);
                     PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
                     statement.setLong(1, watcher.getIdExperiment());
@@ -311,7 +312,7 @@ public class MovsMigrator extends Thread {
             } else {
                 s.executeUpdate(sqlInsert);
             }
-            for (int sala = 2; sala <= 10; sala++) { // VER ESTA LINHA
+            for (int sala = 2; sala <= 10; sala++) { // TODO VER ESTA LINHA
                 sqlInsert = String.format("""
                         INSERT INTO salas_ratos(sala, ratos, experiencia)
                         VALUES (%d, 0, %d)
