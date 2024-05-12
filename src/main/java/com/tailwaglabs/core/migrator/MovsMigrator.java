@@ -368,6 +368,7 @@ public class MovsMigrator extends Thread {
         Boolean isValidReading = (isError == 0);
         if (illegalMovement) {
             isValidReading = false;
+            isError = 1;
         }
         logger.log("Valid reading: " + isValidReading);
         lastTenReadings.add(isValidReading);
