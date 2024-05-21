@@ -142,7 +142,7 @@ public class MovsMigrator extends Thread {
 
     private void migrationLoop() throws SQLException {
         int[][] topology = topologyService.getTopology(); // get labyrinth topology from relational
-        int nbRooms = topology.length - 1;
+        int nbRooms = topology.length - 1; // always 10 after changes motivated by teacher email
         int miceLimit = watcher.getMiceLimit();
         int startingMiceNumber = watcher.getStartingMiceNumber();
         topologyService.show_matrix(topology); // show labyrinth topology retrieved from relational
@@ -340,8 +340,8 @@ public class MovsMigrator extends Thread {
             s.close();
         } catch (Exception e) {
             logger.log("Error Inserting in the database. " + e);
-            logger.log(sqlInsert);
-            logger.log(sqlUpdate);
+            logger.log("SQL INSERT STATEMENT: " + sqlInsert);
+            logger.log("SQL UPDATE STATEMENT: " + sqlUpdate);
         }
     }
 

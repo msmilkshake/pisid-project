@@ -25,7 +25,7 @@ public class TopologyService {
         }
     }
 
-    private int get_number_of_rooms(Connection connection) throws SQLException {
+    private int get_number_of_rooms(Connection connection) throws SQLException {  // obsolete after teacher email
         Statement statement = connection.createStatement();
         ResultSet resultSet = statement.executeQuery("SELECT numerodesalas FROM configuracaolabirinto");
         resultSet.next();
@@ -39,11 +39,11 @@ public class TopologyService {
         ResultSet resultSet = statement.executeQuery("SELECT salaa, salab FROM corredor");
 
         while (resultSet.next()) {
-            int a = resultSet.getInt("salaa");
-            int b = resultSet.getInt("salab");
+            int a = resultSet.getInt("salaa");  // index of ROW in two-dimension array (1 - 10)
+            int b = resultSet.getInt("salab");  // index of COL in two-dimension array (1 - 10)
             try {
-                topology[a][b] = 1;  // load adjacency matrix
-            } catch (ArrayIndexOutOfBoundsException e) { // deals with anomalous changes in cloud db
+                topology[a][b] = 1;  // load adjacency matrix -> 1 represents connection between rooms (default is 0)
+            } catch (ArrayIndexOutOfBoundsException e) { // deals with anomalous changes in cloud db (obsolete)
 //                logger.log("Load topology: " + e);
             }
         }
@@ -62,9 +62,9 @@ public class TopologyService {
             bd_cloud_user = p.getProperty("bd_cloud_user");
             bd_cloud_pass = p.getProperty("bd_cloud_password");
             bd_cloud_connection = DriverManager.getConnection(bd_cloud_con, bd_cloud_pass, bd_cloud_user);
-            int nbRooms = get_number_of_rooms(bd_cloud_connection);
+//            int nbRooms = get_number_of_rooms(bd_cloud_connection); // obsolete
             // create adjacency matrix nbRooms wide
-            topology = new int[nbRooms][nbRooms];
+            topology = new int[11][11]; // array size hard coded to support up to 10 rooms (1 - 10)
             // Query DB to find labyrinth topology
             load_topology(bd_cloud_connection, topology);
             bd_cloud_connection.close();
