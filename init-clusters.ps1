@@ -5,19 +5,19 @@ Receive-Job -Job $job1
 Start-Sleep -Seconds 1
 
 Write-Host "Configuring ReplicaSet:"
-$initiateOutput = & mongosh --port 27019 --eval "rs.initiate()" 2>&1
+$initiateOutput = & mongosh --host 192.168.1.139 --port 27019 --eval "rs.initiate()" 2>&1
 $initialized = ($initiateOutput -match ".*already initialized.*" -join " ").ToString() -notlike "*already initialized*"
 
 if ($initialized) {
     Write-Host "Replica set is not initialized. Configuring..."
 
     Write-Host "Creating user:"
-    $testOutput = & mongosh --port 27019 --eval "use admin" --eval "db.createUser({user: 'rootuser', pwd: 'rootpassword',roles:[{role:'root', db:'admin'}]})" 2>&1
+    $testOutput = & mongosh --host 192.168.1.139 --port 27019 --eval "use admin" --eval "db.createUser({user: 'rootuser', pwd: 'rootpassword',roles:[{role:'root', db:'admin'}]})" 2>&1
     Write-Host $testOutput
 
     Write-Host "Adding clusters..."
-    & mongosh --port 27019 --eval "rs.add('localhost:25019'); exit;" --quiet
-    & mongosh --port 27019 --eval "rs.add('localhost:23019'); exit;" --quiet
+    & mongosh --host 192.168.1.139 --port 27019 --eval "rs.add('192.168.1.139:25019'); exit;" --quiet
+    & mongosh --host 192.168.1.139 --port 27019 --eval "rs.add('192.168.1.139:23019'); exit;" --quiet
 } else {
     Write-Host "Replica set is already configured."
 }

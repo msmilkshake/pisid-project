@@ -42,3 +42,9 @@ the line `$cfg['Servers'][$i]['password'] = 'your_root_password';`
 
 
 - Verify the [WriteMysql.ini](WriteMysql.ini) for the db configuration
+
+
+EDIT IP ADDRESSES IN:
+[init-clusters.ps1](init-clusters.ps1)
+[config.ini](config.ini)
+server(s).conf
