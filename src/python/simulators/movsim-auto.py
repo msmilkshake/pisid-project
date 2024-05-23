@@ -29,7 +29,7 @@ adjacency_mask = [  # rows: from, cols: to
 ]
 
 room_mouses = {
-    1: 40,
+    1: 30,
     2: 0,
     3: 0,
     4: 0,
