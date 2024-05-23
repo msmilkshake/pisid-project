@@ -670,11 +670,13 @@ public class TempsMigrator {
         }
     }
 
-    // TODO Paulo - "Dar o toque"
     private TimerTask temperatureReadingsAbsence() {
         return new TimerTask() {
             @Override
             public void run() {
+                if (!isExperimentRunning){
+                    return;
+                }
                 logger.log("Readings Absence (ALERT)");
                 try {
                     PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_TEMP_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
