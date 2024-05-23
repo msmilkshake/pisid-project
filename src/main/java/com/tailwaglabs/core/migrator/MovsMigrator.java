@@ -172,6 +172,7 @@ public class MovsMigrator extends Thread {
             while (cursor.hasNext()) {
                 boolean illegalMovement = false;
                 doc = cursor.next();
+                logger.log("Arrived doc: " + doc);
                 int from_room = doc.getInteger("SalaOrigem");
                 int to_room = doc.getInteger("SalaDestino");
                 if (from_room > nbRooms || to_room > nbRooms || from_room == to_room || topology[from_room][to_room] == 0 || rooms_population.get(from_room) == 0) {
@@ -206,7 +207,7 @@ public class MovsMigrator extends Thread {
                 logger.log("Mice in rooms: " + rooms_population);
             }
             if (doc != null) {
-                movsTimestamp = System.currentTimeMillis() - 1000;
+                movsTimestamp = System.currentTimeMillis() - 5000;
             }
             logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
             try {

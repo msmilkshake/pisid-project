@@ -220,7 +220,7 @@ public class TempsMigrator {
             }
 
             if (doc != null) {
-                currentTimestamp = System.currentTimeMillis() - 1000;
+                currentTimestamp = System.currentTimeMillis() - 10000;
             }
 
             logger.log("--- Sleeping " + (TEMPS_FREQUENCY / 1000) + " seconds... ---\n");
