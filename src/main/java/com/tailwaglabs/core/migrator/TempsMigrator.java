@@ -374,7 +374,8 @@ public class TempsMigrator {
             statement.setInt(7, isOutlier ? 1 : 0);
 
 
-            statement.executeUpdate();
+            int test = statement.executeUpdate();
+            logger.log("Affected rows " + test);
             ResultSet generatedKeys = statement.getGeneratedKeys();
 
             if (generatedKeys.next() && isValidReading && !isOutlier) {
