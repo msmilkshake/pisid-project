@@ -202,20 +202,20 @@ public class MovsMigrator extends Thread {
                         rooms_population.put(from_room, rooms_population.get(from_room) - 1);
                         if (rooms_population.get(to_room) >= miceLimit) { // Alert if mice number exceeded limit
                             try {
-                            String message = "Excesso de ratos na Sala %d.";
-                            message = String.format(message, to_room);
-                            PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
-                            statement.setLong(1, watcher.getIdExperiment());
-                            statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
-                            statement.setNull(3, Types.NULL);
-                            statement.setNull(4, Types.NULL);
-                            statement.setInt(5, AlertType.AVISO.getValue());
-                            statement.setString(6, message);
-                            statement.setInt(7, AlertSubType.MAX_MICE_REACHED.getValue());
-                            statement.setInt(8, to_room);
-                            statement.executeUpdate();
-                            statement.close();
-                            logger.log("ALERT TOO MANY MICE in room " + to_room);
+                                String message = "Excesso de ratos na Sala %d.";
+                                message = String.format(message, to_room);
+                                PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+                                statement.setLong(1, watcher.getIdExperiment());
+                                statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+                                statement.setNull(3, Types.NULL);
+                                statement.setNull(4, Types.NULL);
+                                statement.setInt(5, AlertType.AVISO.getValue());
+                                statement.setString(6, message);
+                                statement.setInt(7, AlertSubType.MAX_MICE_REACHED.getValue());
+                                statement.setInt(8, to_room);
+                                statement.executeUpdate();
+                                statement.close();
+                                logger.log("ALERT TOO MANY MICE in room " + to_room);
                             } catch (SQLException e) {
                                 logger.log("Error connecting to MariaDB. - statement.executeUpdate()" + e);
                             }
