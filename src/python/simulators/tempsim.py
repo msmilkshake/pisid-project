@@ -25,14 +25,14 @@ prc_rampage = 0.00
 
 regular_temp_variation = 0.6
 
-rampage_value = 1.25
-rampage_variation = 0.5
+rampage_value = 0.75
+rampage_variation = 0.75
 
-outlier_value = 20.0
+outlier_value = 25.0
 outlier_variation = 10.0
 
-output_temp1 = 20
-output_temp2 = 40
+output_temp1 = 19
+output_temp2 = 23
 
 # output_temp1 = random.uniform(15.0, 35.0)
 # output_temp2 = random.uniform(15.0, 35.0)
