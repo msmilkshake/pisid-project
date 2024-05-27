@@ -107,7 +107,8 @@ public class MovsMigrator extends Thread {
         try {
             migrationLoop();
         } catch (SQLException e) {
-            logger.log("Error connecting to MariaDB." + e);
+            e.printStackTrace();
+            logger.log("Error connecting to MariaDB. - IN run()" + e);
         }
     }
 
@@ -133,7 +134,7 @@ public class MovsMigrator extends Thread {
             movsCollection = db.getCollection(mongoCollection);
             connectToMariaDB();
         } catch (SQLException e) {
-            logger.log("Error connecting to MariaDB." + e);
+            logger.log("Error connecting to MariaDB. - IN init()" + e);
         } catch (IOException e) {
             logger.log("Error reading config.ini file." + e);
         }
@@ -200,6 +201,7 @@ public class MovsMigrator extends Thread {
                         rooms_population.put(to_room, rooms_population.get(to_room) + 1);
                         rooms_population.put(from_room, rooms_population.get(from_room) - 1);
                         if (rooms_population.get(to_room) >= miceLimit) { // Alert if mice number exceeded limit
+                            try {
                             String message = "Excesso de ratos na Sala %d.";
                             message = String.format(message, to_room);
                             PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
@@ -214,6 +216,9 @@ public class MovsMigrator extends Thread {
                             statement.executeUpdate();
                             statement.close();
                             logger.log("ALERT TOO MANY MICE in room " + to_room);
+                            } catch (SQLException e) {
+                                logger.log("Error connecting to MariaDB. - statement.executeUpdate()" + e);
+                            }
                         }
                         for (var entry : rooms_population.entrySet()) {
                             persistMicePopulation(entry.getKey(), entry.getValue(), watcher.getIdExperiment());
@@ -223,7 +228,7 @@ public class MovsMigrator extends Thread {
                     logger.log("Mice in rooms: " + rooms_population);
                 }
                 if (doc != null) {
-                    movsTimestamp = System.currentTimeMillis() - 5000;
+                    movsTimestamp = System.currentTimeMillis() - 15000;
                 }
                 logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
                 try {
@@ -260,6 +265,7 @@ public class MovsMigrator extends Thread {
             statement.close();
             logger.log("ALERT: invalid movement!");
         } catch (Exception e) {
+            logger.log("Error in invalidMovement(int from_room, int to_room)");
             logger.log(e);
         }
     }
@@ -272,6 +278,7 @@ public class MovsMigrator extends Thread {
             Date date = formatter.parse(dateFromMongo);
             hora = date.getTime();
         } catch (Exception e) {
+            logger.log("Error in validateReading(Document doc)");
             logger.log(e);
         }
         long timeStamp = doc.getLong("Timestamp");
@@ -401,7 +408,7 @@ public class MovsMigrator extends Thread {
         try {
             checkTooManyErrors();
         } catch (SQLException e) {
-            logger.log("Error connecting to MariaDB." + e);
+            logger.log("Error connecting to MariaDB. - IN persistMov(Document doc, long experiencia, boolean illegalMovement)" + e);
         }
         String sqlQuery = String.format("""
                 INSERT INTO medicoespassagens(IDExperiencia, SalaOrigem, SalaDestino, Hora, TimestampRegisto, IsError)

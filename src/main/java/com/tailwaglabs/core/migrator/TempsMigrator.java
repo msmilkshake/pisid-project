@@ -110,7 +110,7 @@ public class TempsMigrator {
 
     private final int TEMPS_FREQUENCY = 3 * 1000; // 3 seconds
 
-    private final int TEMPS_ABSENCE_LIMIT = 5 * 1000; // 3 seconds
+    private final int TEMPS_ABSENCE_LIMIT = 5 * 1000; // 5 seconds
 
     private ExperimentWatcher watcher = ExperimentWatcher.getInstance();
 
@@ -233,7 +233,7 @@ public class TempsMigrator {
                 }
 
                 if (doc != null) {
-                    currentTimestamp = System.currentTimeMillis() - 10000;
+                    currentTimestamp = System.currentTimeMillis() - 15000;
                 }
 
                 logger.log("--- Sleeping " + (TEMPS_FREQUENCY / 1000) + " seconds... ---\n");
