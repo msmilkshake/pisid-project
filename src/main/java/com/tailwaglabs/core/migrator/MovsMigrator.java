@@ -1,6 +1,8 @@
 package com.tailwaglabs.core.migrator;
 
 import com.mongodb.MongoClient;
+import com.mongodb.MongoClientURI;
+import com.mongodb.MongoNotPrimaryException;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
@@ -17,8 +19,8 @@ import java.io.IOException;
 import java.sql.*;
 import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
-import java.util.*;
 import java.util.Date;
+import java.util.*;
 
 /**
  * Migrates and processes Movs sensor data: Mongo - MySQL
@@ -33,6 +35,7 @@ public class MovsMigrator extends Thread {
     // ini Mongo Properties
     private String mongoHost = "localhost";
     private int mongoPort = 27019;
+    private String mongoReplica = "sensorreplicaset";
     private String mongoDatabase = "mqqt";
     private String mongoCollection = "movs";
 
@@ -117,7 +120,8 @@ public class MovsMigrator extends Thread {
             ExperimentWatcher.setMovsMigratorInstance(this);
             Properties p = new Properties();
             p.load(new FileInputStream("config.ini"));
-            mongoHost = p.getProperty("mongo_host");
+            mongoHost = p.getProperty("mongo_address");
+            mongoReplica = p.getProperty("mongo_replica");
             mongoPort = Integer.parseInt(p.getProperty("mongo_port"));
             mongoDatabase = p.getProperty("mongo_database");
             mongoCollection = p.getProperty("collection_movs");
@@ -125,7 +129,7 @@ public class MovsMigrator extends Thread {
             sqlPassword = p.getProperty("sql_database_password_to");
             sqlusername = p.getProperty("sql_database_user_to");
             mongoClient = new MongoClient(mongoHost, mongoPort);
-            db = mongoClient.getDatabase(mongoDatabase);
+            db = connectToMongo();
             movsCollection = db.getCollection(mongoCollection);
             connectToMariaDB();
         } catch (SQLException e) {
@@ -134,6 +138,15 @@ public class MovsMigrator extends Thread {
             logger.log("Error reading config.ini file." + e);
         }
         currentTimestamp = System.currentTimeMillis();
+    }
+
+    public MongoDatabase connectToMongo() {
+        String mongoURI = "mongodb://";
+        mongoURI = mongoURI + mongoHost;
+        if (!mongoReplica.equals("false"))
+            mongoURI = mongoURI + "/?replicaSet=" + mongoReplica;
+
+        return new MongoClient(new MongoClientURI(mongoURI)).getDatabase(mongoDatabase);
     }
 
     public void connectToMariaDB() throws SQLException {
@@ -153,67 +166,79 @@ public class MovsMigrator extends Thread {
         persistInitMicePopulation(startingMiceNumber, watcher.getIdExperiment(), nbRooms);
         startTimer(); // timer to keep track of mice movement
         while (TempsMigrator.getExperimentRunning()) {
-            // Connection lost...
-            if (mariadbConnection == null) {
+            try {
+                // Connection lost...
+                if (mariadbConnection == null) {
+                    try {
+                        logger.log("Not connected to MariaDB.");
+                        logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
+                        // noinspection BusyWait
+                        Thread.sleep(MOVS_FREQUENCY);
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                    continue;
+                }
+                String query = String.format(QUERY_MONGO_GET_MOVS, movsTimestamp);
+                FindIterable<Document> results = movsCollection.find(BsonDocument.parse(query));
+                Document doc = null;
+                Iterator<Document> cursor = null;
+                cursor = results.iterator();
+
+                while (cursor.hasNext()) {
+                    boolean illegalMovement = false;
+                    doc = cursor.next();
+                    logger.log("Arrived doc: " + doc);
+                    int from_room = doc.getInteger("SalaOrigem");
+                    int to_room = doc.getInteger("SalaDestino");
+                    if (from_room > nbRooms || to_room > nbRooms || from_room == to_room || topology[from_room][to_room] == 0 || rooms_population.get(from_room) == 0) {
+                        invalidMovement(from_room, to_room);
+                        illegalMovement = true;
+                    } else {  // movement can be performed
+                        stopTimer();  // reset timer to keep track of mice movement
+                        startTimer(); // reset timer to keep track of mice movement
+                        rooms_population.put(to_room, rooms_population.get(to_room) + 1);
+                        rooms_population.put(from_room, rooms_population.get(from_room) - 1);
+                        if (rooms_population.get(to_room) >= miceLimit) { // Alert if mice number exceeded limit
+                            String message = "Excesso de ratos na Sala %d.";
+                            message = String.format(message, to_room);
+                            PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
+                            statement.setLong(1, watcher.getIdExperiment());
+                            statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
+                            statement.setNull(3, Types.NULL);
+                            statement.setNull(4, Types.NULL);
+                            statement.setInt(5, AlertType.AVISO.getValue());
+                            statement.setString(6, message);
+                            statement.setInt(7, AlertSubType.MAX_MICE_REACHED.getValue());
+                            statement.setInt(8, to_room);
+                            statement.executeUpdate();
+                            statement.close();
+                            logger.log("ALERT TOO MANY MICE in room " + to_room);
+                        }
+                        for (var entry : rooms_population.entrySet()) {
+                            persistMicePopulation(entry.getKey(), entry.getValue(), watcher.getIdExperiment());
+                        }
+                    }
+                    persistMov(doc, watcher.getIdExperiment(), illegalMovement);
+                    logger.log("Mice in rooms: " + rooms_population);
+                }
+                if (doc != null) {
+                    movsTimestamp = System.currentTimeMillis() - 5000;
+                }
+                logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
                 try {
-                    logger.log("Not connected to MariaDB.");
-                    logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
-                    //noinspection BusyWait
                     Thread.sleep(MOVS_FREQUENCY);
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
                 }
-                continue;
-            }
-            String query = String.format(QUERY_MONGO_GET_MOVS, movsTimestamp);
-            FindIterable<Document> results = movsCollection.find(BsonDocument.parse(query));
-            Document doc = null;
-            Iterator<Document> cursor = results.iterator();
-            while (cursor.hasNext()) {
-                boolean illegalMovement = false;
-                doc = cursor.next();
-                logger.log("Arrived doc: " + doc);
-                int from_room = doc.getInteger("SalaOrigem");
-                int to_room = doc.getInteger("SalaDestino");
-                if (from_room > nbRooms || to_room > nbRooms || from_room == to_room || topology[from_room][to_room] == 0 || rooms_population.get(from_room) == 0) {
-                    invalidMovement(from_room, to_room);
-                    illegalMovement = true;
-                } else {  // movement can be performed
-                    stopTimer();  // reset timer to keep track of mice movement
-                    startTimer(); // reset timer to keep track of mice movement
-                    rooms_population.put(to_room, rooms_population.get(to_room) + 1);
-                    rooms_population.put(from_room, rooms_population.get(from_room) - 1);
-                    if (rooms_population.get(to_room) >= miceLimit) { // Alert if mice number exceeded limit
-                        String message = "Excesso de ratos na Sala %d.";
-                        message = String.format(message, to_room);
-                        PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_INSERT_ALERT, PreparedStatement.RETURN_GENERATED_KEYS);
-                        statement.setLong(1, watcher.getIdExperiment());
-                        statement.setTimestamp(2, Timestamp.valueOf(LocalDateTime.now()));
-                        statement.setNull(3, Types.NULL);
-                        statement.setNull(4, Types.NULL);
-                        statement.setInt(5, AlertType.AVISO.getValue());
-                        statement.setString(6, message);
-                        statement.setInt(7, AlertSubType.MAX_MICE_REACHED.getValue());
-                        statement.setInt(8, to_room);
-                        statement.executeUpdate();
-                        statement.close();
-                        logger.log("ALERT TOO MANY MICE in room " + to_room);
-                    }
-                    for (var entry : rooms_population.entrySet()) {
-                        persistMicePopulation(entry.getKey(), entry.getValue(), watcher.getIdExperiment());
-                    }
+            } catch (MongoNotPrimaryException e) {
+                logger.log(Logger.Severity.WARNING, "Mongo PRIMARY server unaccessible.");
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
                 }
-                persistMov(doc, watcher.getIdExperiment(), illegalMovement);
-                logger.log("Mice in rooms: " + rooms_population);
-            }
-            if (doc != null) {
-                movsTimestamp = System.currentTimeMillis() - 5000;
-            }
-            logger.log("--- Sleeping " + (MOVS_FREQUENCY / 1000) + " seconds... ---\n");
-            try {
-                Thread.sleep(MOVS_FREQUENCY);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+                db = connectToMongo();
             }
         }
     }
@@ -329,9 +354,9 @@ public class MovsMigrator extends Thread {
                         VALUES (%d, 0, %d)
                         """, sala, exp);
                 sqlUpdate = String.format("""
-                    UPDATE salas_ratos set ratos = 0
-                    WHERE sala = %d and experiencia = %d
-                    """, sala, exp);
+                        UPDATE salas_ratos set ratos = 0
+                        WHERE sala = %d and experiencia = %d
+                        """, sala, exp);
                 if (existsExperience) {
                     s.executeUpdate(sqlUpdate);
                 } else {

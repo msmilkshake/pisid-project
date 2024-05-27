@@ -1,6 +1,8 @@
 package com.tailwaglabs.core.migrator;
 
 import com.mongodb.MongoClient;
+import com.mongodb.MongoClientURI;
+import com.mongodb.MongoNotPrimaryException;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
@@ -38,6 +40,7 @@ public class TempsMigrator {
     // ini Mongo Properties
     private String mongoHost = "localhost";
     private int mongoPort = 27019;
+    private String mongoReplica = "sensorreplicaset";
     private String mongoDatabase = "mqqt";
     private String mongoCollection = "temps";
 
@@ -141,7 +144,8 @@ public class TempsMigrator {
             Properties p = new Properties();
             p.load(new FileInputStream("config.ini"));
 
-            mongoHost = p.getProperty("mongo_host");
+            mongoHost = p.getProperty("mongo_address");
+            mongoReplica = p.getProperty("mongo_replica");
             mongoPort = Integer.parseInt(p.getProperty("mongo_port"));
             mongoDatabase = p.getProperty("mongo_database");
             mongoCollection = p.getProperty("collection_temps");
@@ -151,7 +155,7 @@ public class TempsMigrator {
             sqlusername = p.getProperty("sql_database_user_to");
 
             mongoClient = new MongoClient(mongoHost, mongoPort);
-            db = mongoClient.getDatabase(mongoDatabase);
+            db = connectToMongo();
             tempsCollection = db.getCollection(mongoCollection);
             connectToMariaDB();
 
@@ -165,70 +169,88 @@ public class TempsMigrator {
         currentTimestamp = System.currentTimeMillis();
     }
 
+    public MongoDatabase connectToMongo() {
+        String mongoURI = "mongodb://";
+        mongoURI = mongoURI + mongoHost;
+        if (!mongoReplica.equals("false"))
+            mongoURI = mongoURI + "/?replicaSet=" + mongoReplica;
+
+        return new MongoClient(new MongoClientURI(mongoURI)).getDatabase(mongoDatabase);
+    }
+
     public void connectToMariaDB() throws SQLException {
         mariadbConnection = DriverManager.getConnection(sqlConnection, sqlusername, sqlPassword);
     }
 
     private void migrationLoop() {
         while (true) {
+            try {
+                // Connection lost...
+                if (mariadbConnection == null) {
+                    try {
+                        logger.log("Not connected to MariaDB.");
+                        logger.log("--- Sleeping " + (TEMPS_FREQUENCY / 1000) + " seconds... ---\n");
+                        // noinspection BusyWait
+                        Thread.sleep(TEMPS_FREQUENCY);
+                    } catch (InterruptedException e) {
+                        logger.log(e);
+                    }
+                    continue;
+                }
 
-            // Connection lost...
-            if (mariadbConnection == null) {
+
+                Document tempsQuery = Document.parse(String.format(QUERY_MONGO_GET_TEMPS, currentTimestamp));
+                cursor = tempsCollection.find(tempsQuery).iterator();
+
+                if (cursor.hasNext()) {
+                    stopTimer();
+                    // System.out.println("Timer Reset");
+                    startTimer();
+                }
+
+
+                Document doc = null;
+                while (cursor.hasNext()) {
+                    doc = cursor.next();
+                    logger.log(doc);
+
+                    // Se guardar com sucesso ir ao Mongo e colocar o campo deste registo com Migrated: 1
+                    if (persistTemp(doc)) {
+                        try {
+                            Document filter = new Document(new Document("_id", doc.get("_id")));
+                            Document update = new Document("$set", new Document("Migrated", "1"));
+                            tempsCollection.updateOne(filter, update);
+
+                            logger.log(Logger.Severity.INFO, "Temps Migration successful and MongoDB updated.");
+                        } catch (Exception e) {
+                            logger.log(Logger.Severity.WARNING, "Update for document with id:" + doc.get("_id"));
+                            System.out.println("Update for document with id: " + doc.get("_id"));
+                            e.printStackTrace();
+                        }
+                    } else {
+                        logger.log(Logger.Severity.WARNING, "Temp persist failed");
+                    }
+                }
+
+                if (doc != null) {
+                    currentTimestamp = System.currentTimeMillis() - 10000;
+                }
+
+                logger.log("--- Sleeping " + (TEMPS_FREQUENCY / 1000) + " seconds... ---\n");
                 try {
-                    logger.log("Not connected to MariaDB.");
-                    logger.log("--- Sleeping " + (TEMPS_FREQUENCY / 1000) + " seconds... ---\n");
-                    //noinspection BusyWait
+                    // noinspection BusyWait
                     Thread.sleep(TEMPS_FREQUENCY);
                 } catch (InterruptedException e) {
                     logger.log(e);
                 }
-                continue;
-            }
-
-
-            Document tempsQuery = Document.parse(String.format(QUERY_MONGO_GET_TEMPS, currentTimestamp));
-            cursor = tempsCollection.find(tempsQuery).iterator();
-
-            if (cursor.hasNext()) {
-                stopTimer();
-                //System.out.println("Timer Reset");
-                startTimer();
-            }
-
-
-            Document doc = null;
-            while (cursor.hasNext()) {
-                doc = cursor.next();
-                logger.log(doc);
-
-                // Se guardar com sucesso ir ao Mongo e colocar o campo deste registo com Migrated: 1
-                if (persistTemp(doc)) {
-                    try {
-                        Document filter = new Document(new Document("_id", doc.get("_id")));
-                        Document update = new Document("$set", new Document("Migrated", "1"));
-                        tempsCollection.updateOne(filter, update);
-
-                        logger.log(Logger.Severity.INFO, "Temps Migration successful and MongoDB updated.");
-                    } catch (Exception e) {
-                        logger.log(Logger.Severity.WARNING, "Update for document with id:" + doc.get("_id"));
-                        System.out.println("Update for document with id: " + doc.get("_id"));
-                        e.printStackTrace();
-                    }
-                } else {
-                    logger.log(Logger.Severity.WARNING, "Temp persist failed");
+            } catch (MongoNotPrimaryException e) {
+                logger.log(Logger.Severity.WARNING, "Mongo PRIMARY server unaccessible.");
+                try {
+                    Thread.sleep(2000);
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
                 }
-            }
-
-            if (doc != null) {
-                currentTimestamp = System.currentTimeMillis() - 10000;
-            }
-
-            logger.log("--- Sleeping " + (TEMPS_FREQUENCY / 1000) + " seconds... ---\n");
-            try {
-                //noinspection BusyWait
-                Thread.sleep(TEMPS_FREQUENCY);
-            } catch (InterruptedException e) {
-                logger.log(e);
+                db = connectToMongo();
             }
         }
     }
@@ -291,7 +313,7 @@ public class TempsMigrator {
                     checkLimitProximity(doc);
                     limitReached(doc);
                 }
-                 sendTooManyOutliersAlert(doc);
+                sendTooManyOutliersAlert(doc);
             } catch (SQLException e) {
                 if (e.toString().contains("Alerta duplicado")) {
                     logger.log(e.toString());
@@ -378,10 +400,10 @@ public class TempsMigrator {
 
     private boolean validateReading(Document doc) {
         boolean validFormat = doc.containsKey("Leitura") &&
-                              doc.containsKey("Sensor") &&
-                              doc.containsKey("Hora") &&
-                              doc.containsKey("Timestamp") &&
-                              !isWrongTimestamp(doc);
+                doc.containsKey("Sensor") &&
+                doc.containsKey("Hora") &&
+                doc.containsKey("Timestamp") &&
+                !isWrongTimestamp(doc);
         try {
             doc.getDouble("Leitura");
             doc.getInteger("Sensor");
@@ -423,13 +445,13 @@ public class TempsMigrator {
             statement.setString(6, message);
             statement.setInt(7, AlertSubType.TEMPERATURE_NEAR_LIMIT_MIN.getValue());
             statement.executeUpdate();
-            //logger.log("Temperatura próxima do limite inferior");
+            // logger.log("Temperatura próxima do limite inferior");
         } else if (actualTemp >= maxLimit && actualTemp <= tempMax) {
             message = String.format(message, "superior", sensor);
             statement.setString(6, message);
             statement.setInt(7, AlertSubType.TEMPERATURE_NEAR_LIMIT_MAX.getValue());
             statement.executeUpdate();
-            //logger.log("Temperatura próxima do limite superior");
+            // logger.log("Temperatura próxima do limite superior");
         }
         statement.close();
     }
@@ -460,13 +482,13 @@ public class TempsMigrator {
             statement.setString(6, message);
             statement.setInt(7, AlertSubType.TEMPERATURE_LIMIT_REACHED_MIN.getValue());
             statement.executeUpdate();
-            //logger.log("Temperatura atingiu limite inferior");
+            // logger.log("Temperatura atingiu limite inferior");
         } else if (actualTemp >= tempMax) {
             message = String.format(message, "máximo", sensor);
             statement.setString(6, message);
             statement.setInt(7, AlertSubType.TEMPERATURE_LIMIT_REACHED_MAX.getValue());
             statement.executeUpdate();
-            //logger.log("Temperatura atingiu limite superior");
+            // logger.log("Temperatura atingiu limite superior");
         }
 
         statement.close();
@@ -546,11 +568,11 @@ public class TempsMigrator {
 
         boolean isOutlier =
                 currentReading > regressedTemp + watcher.getOutlierTempMaxVar() ||
-                currentReading < regressedTemp - watcher.getOutlierTempMaxVar();
+                        currentReading < regressedTemp - watcher.getOutlierTempMaxVar();
 
         boolean isOutlierWithOutlier =
                 currentReading > outlierRegressedTemp + watcher.getOutlierTempMaxVar() ||
-                currentReading < outlierRegressedTemp - watcher.getOutlierTempMaxVar();
+                        currentReading < outlierRegressedTemp - watcher.getOutlierTempMaxVar();
 
         return isOutlier && isOutlierWithOutlier;
     }
@@ -567,13 +589,13 @@ public class TempsMigrator {
         PreparedStatement statement = mariadbConnection.prepareStatement(QUERY_SQL_COUNT_OUTLIERS_LAST_X_RECORDS);
         statement.setInt(1, sensor);
         statement.setInt(2, watcher.getOutlierRecordsNumber());
-        //logger.log("Number of records " + watcher.getOutlierRecordsNumber());
+        // logger.log("Number of records " + watcher.getOutlierRecordsNumber());
         ResultSet resultSet = statement.executeQuery();
         int numberOfOutliers = 0;
 
         if (resultSet.next()) {
             numberOfOutliers = resultSet.getInt("outliers_count");
-            //logger.log("Count of outliers " + numberOfOutliers);
+            // logger.log("Count of outliers " + numberOfOutliers);
         }
 
         String message = "Sensor de temperatura %d registou demasiados Outliers.";
@@ -674,7 +696,7 @@ public class TempsMigrator {
         return new TimerTask() {
             @Override
             public void run() {
-                if (!isExperimentRunning){
+                if (!isExperimentRunning) {
                     return;
                 }
                 logger.log("Readings Absence (ALERT)");

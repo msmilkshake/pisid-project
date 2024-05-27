@@ -40,9 +40,6 @@ public class ExperimentWatcher extends Thread {
     private String sqlusername = "";
     private String sqlPassword = "";
 
-    private MongoClient mongoClient;
-    private MongoDatabase db;
-
     private Connection mariadbConnection;
 
     private final int REFRESH_RATE = 1 * 1000; // 1 second
