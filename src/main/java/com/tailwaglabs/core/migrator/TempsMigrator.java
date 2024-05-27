@@ -638,6 +638,8 @@ public class TempsMigrator {
         Instant instant = Instant.ofEpochMilli(doc.getLong("Timestamp"));
         LocalDateTime timeStampFromMongo = LocalDateTime.ofInstant(instant, ZoneId.systemDefault());
 
+        timeStampFromMongo = timeStampFromMongo.plusSeconds(30);
+
         // Variable to store 15 earlier than the Timestamp
         LocalDateTime fifteenMinutesEarlier = timeStampFromMongo.minusMinutes(15);
 
