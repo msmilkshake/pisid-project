@@ -42,3 +42,10 @@ the line `$cfg['Servers'][$i]['password'] = 'your_root_password';`
 
 
 - Verify the [WriteMysql.ini](WriteMysql.ini) for the db configuration
+
+```shell
+mongod.exe --config "C:\sensor-replica-set\server1\server1.conf"
+mongod.exe --config "C:\sensor-replica-set\server2\server2.conf"
+mongod.exe --config "C:\sensor-replica-set\server3\server3.conf"
+```
+

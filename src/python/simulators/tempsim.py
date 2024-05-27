@@ -25,8 +25,8 @@ prc_rampage = 0.00
 
 regular_temp_variation = 0.6
 
-rampage_value = 0.75
-rampage_variation = 0.75
+rampage_value = 1.5
+rampage_variation = 0.5
 
 outlier_value = 25.0
 outlier_variation = 10.0
